@@ -23,8 +23,13 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  BookOpen
+  BookOpen,
+  PanelLeftOpen,
+  PanelLeftClose,
+  PanelRightOpen,
+  PanelRightClose
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const tones = [
   { value: 'neutral', label: 'Neutral' },
@@ -42,6 +47,8 @@ export default function ChapterStudio() {
   const [targetWordCount, setTargetWordCount] = useState([3000]);
   const [selectedTone, setSelectedTone] = useState('neutral');
   const [isRunning, setIsRunning] = useState(false);
+  const [isChaptersOpen, setIsChaptersOpen] = useState(true);
+  const [isControlsOpen, setIsControlsOpen] = useState(true);
 
   // Mock content
   const chapterContent = {
@@ -72,26 +79,50 @@ export default function ChapterStudio() {
   return (
     <AppLayout>
       <div className="flex h-[calc(100vh-4rem)]">
-        {/* Left - Chapter list */}
-        <div className="w-96 shrink-0 border-r border-border bg-sidebar/50 flex flex-col">
-          <div className="p-4 border-b border-border">
-            <h2 className="font-display text-lg font-semibold mb-1">Chapters</h2>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span>{completedChapters}/{chapters.length} complete</span>
-              <span>{totalWords.toLocaleString()} words</span>
-            </div>
-          </div>
+        {/* Left panel toggle when collapsed */}
+        {!isChaptersOpen && (
+          <Button
+            variant="glass"
+            size="icon"
+            className="fixed left-4 top-20 z-40"
+            onClick={() => setIsChaptersOpen(true)}
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+          </Button>
+        )}
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            {chapters.map((chapter) => (
-              <ChapterRow
-                key={chapter.id}
-                chapter={chapter}
-                isActive={selectedChapter.id === chapter.id}
-                onClick={() => setSelectedChapter(chapter)}
-                onContinue={() => setSelectedChapter(chapter)}
-              />
-            ))}
+        {/* Left - Chapter list */}
+        <div className={cn(
+          "shrink-0 border-r border-border bg-sidebar/50 flex flex-col transition-all duration-300",
+          isChaptersOpen ? "w-80" : "w-0 overflow-hidden"
+        )}>
+          <div className="w-80">
+            {/* Header with collapse */}
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h3 className="font-display text-lg font-semibold">Chapters</h3>
+              <Button variant="ghost" size="icon" onClick={() => setIsChaptersOpen(false)}>
+                <PanelLeftClose className="w-4 h-4" />
+              </Button>
+            </div>
+            
+            <div className="p-4 border-b border-border">
+              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <span>{completedChapters}/{chapters.length} complete</span>
+                <span>{totalWords.toLocaleString()} words</span>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-2 max-h-[calc(100vh-12rem)]">
+              {chapters.map((chapter) => (
+                <ChapterRow
+                  key={chapter.id}
+                  chapter={chapter}
+                  isActive={selectedChapter.id === chapter.id}
+                  onClick={() => setSelectedChapter(chapter)}
+                  onContinue={() => setSelectedChapter(chapter)}
+                />
+              ))}
+            </div>
           </div>
         </div>
 
@@ -149,151 +180,172 @@ export default function ChapterStudio() {
           </div>
         </div>
 
-        {/* Right - Controls panel */}
-        <div className="w-80 shrink-0 border-l border-border bg-sidebar/50 flex flex-col">
-          <div className="p-4 border-b border-border">
-            <h3 className="font-display text-lg font-semibold">Controls</h3>
-          </div>
+        {/* Right panel toggle when collapsed */}
+        {!isControlsOpen && (
+          <Button
+            variant="glass"
+            size="icon"
+            className="fixed right-4 top-20 z-40"
+            onClick={() => setIsControlsOpen(true)}
+          >
+            <PanelRightOpen className="w-4 h-4" />
+          </Button>
+        )}
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-6">
-            {/* Previous chapter preview */}
-            {selectedChapter.number > 1 && (
+        {/* Right - Controls panel */}
+        <div className={cn(
+          "shrink-0 border-l border-border bg-sidebar/50 flex flex-col transition-all duration-300",
+          isControlsOpen ? "w-80" : "w-0 overflow-hidden"
+        )}>
+          <div className="w-80">
+            {/* Header with collapse */}
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h3 className="font-display text-lg font-semibold">Controls</h3>
+              <Button variant="ghost" size="icon" onClick={() => setIsControlsOpen(false)}>
+                <PanelRightClose className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-6 max-h-[calc(100vh-8rem)]">
+              {/* Previous chapter preview */}
+              {selectedChapter.number > 1 && (
+                <div>
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
+                    Previous Chapter
+                  </Label>
+                  <div className="glass-card p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <BookOpen className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium">
+                        Ch. {selectedChapter.number - 1}: {chapters[selectedChapter.number - 2]?.title}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground line-clamp-3">
+                      The previous chapter ended with Elena discovering the hidden message in the ancient tome...
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Pinned artifacts */}
               <div>
                 <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
-                  Previous Chapter
+                  Quick Reference
                 </Label>
-                <div className="glass-card p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <BookOpen className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium">
-                      Ch. {selectedChapter.number - 1}: {chapters[selectedChapter.number - 2]?.title}
-                    </span>
+                <div className="space-y-2">
+                  {pinnedArtifacts.slice(0, 4).map((artifact) => (
+                    <ArtifactCard key={artifact.id} artifact={artifact} compact />
+                  ))}
+                </div>
+              </div>
+
+              {/* Settings */}
+              <div>
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">
+                  Generation Settings
+                </Label>
+                
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label className="text-sm">Target Word Count</Label>
+                      <span className="text-sm font-medium text-primary">
+                        {targetWordCount[0].toLocaleString()}
+                      </span>
+                    </div>
+                    <Slider
+                      value={targetWordCount}
+                      onValueChange={setTargetWordCount}
+                      min={1000}
+                      max={6000}
+                      step={500}
+                      className="[&_[role=slider]]:bg-primary"
+                    />
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-3">
-                    The previous chapter ended with Elena discovering the hidden message in the ancient tome...
-                  </p>
-                </div>
-              </div>
-            )}
 
-            {/* Pinned artifacts */}
-            <div>
-              <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
-                Quick Reference
-              </Label>
-              <div className="space-y-2">
-                {pinnedArtifacts.slice(0, 4).map((artifact) => (
-                  <ArtifactCard key={artifact.id} artifact={artifact} compact />
-                ))}
-              </div>
-            </div>
-
-            {/* Settings */}
-            <div>
-              <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">
-                Generation Settings
-              </Label>
-              
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-sm">Target Word Count</Label>
-                    <span className="text-sm font-medium text-primary">
-                      {targetWordCount[0].toLocaleString()}
-                    </span>
+                  <div>
+                    <Label className="text-sm mb-2 block">Tone</Label>
+                    <Select value={selectedTone} onValueChange={setSelectedTone}>
+                      <SelectTrigger className="bg-muted/50 border-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card border-border">
+                        {tones.map((tone) => (
+                          <SelectItem key={tone.value} value={tone.value}>
+                            {tone.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <Slider
-                    value={targetWordCount}
-                    onValueChange={setTargetWordCount}
-                    min={1000}
-                    max={6000}
-                    step={500}
-                    className="[&_[role=slider]]:bg-primary"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-sm mb-2 block">Tone</Label>
-                  <Select value={selectedTone} onValueChange={setSelectedTone}>
-                    <SelectTrigger className="bg-muted/50 border-border">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
-                      {tones.map((tone) => (
-                        <SelectItem key={tone.value} value={tone.value}>
-                          {tone.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
-            </div>
 
-            {/* Run buttons */}
-            <div className="space-y-2 pt-4 border-t border-border">
-              <Button 
-                className="w-full justify-start" 
-                variant="outline"
-                onClick={() => handleRunStep('scene-brief')}
-                disabled={isRunning || selectedChapter.sceneBrief === 'completed'}
-              >
-                <FileText className="w-4 h-4" />
-                Generate Scene Brief
-                {selectedChapter.sceneBrief === 'completed' && (
-                  <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
-                )}
-              </Button>
-              
-              <Button 
-                className="w-full justify-start" 
-                variant="outline"
-                onClick={() => handleRunStep('draft')}
-                disabled={isRunning || selectedChapter.sceneBrief !== 'completed'}
-              >
-                <Sparkles className="w-4 h-4" />
-                Draft Chapter
-                {selectedChapter.draft === 'completed' && (
-                  <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
-                )}
-              </Button>
-              
-              <Button 
-                className="w-full justify-start" 
-                variant="outline"
-                onClick={() => handleRunStep('improve')}
-                disabled={isRunning || selectedChapter.draft !== 'completed'}
-              >
-                <Play className="w-4 h-4" />
-                Analyze & Improve
-                {selectedChapter.improvePlan === 'completed' && (
-                  <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
-                )}
-              </Button>
-              
-              <Button 
-                className="w-full justify-start" 
-                variant="outline"
-                onClick={() => handleRunStep('final')}
-                disabled={isRunning || selectedChapter.improvePlan !== 'completed'}
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                Apply Improvements
-                {selectedChapter.final === 'completed' && (
-                  <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
-                )}
-              </Button>
-
-              <div className="pt-2">
+              {/* Run buttons */}
+              <div className="space-y-2 pt-4 border-t border-border">
                 <Button 
-                  className="w-full" 
-                  size="lg"
-                  onClick={() => handleRunStep('full')}
-                  disabled={isRunning || selectedChapter.final === 'completed'}
+                  className="w-full justify-start" 
+                  variant="outline"
+                  onClick={() => handleRunStep('scene-brief')}
+                  disabled={isRunning || selectedChapter.sceneBrief === 'completed'}
                 >
-                  <Zap className="w-4 h-4" />
-                  Run Full Pipeline
+                  <FileText className="w-4 h-4" />
+                  Generate Scene Brief
+                  {selectedChapter.sceneBrief === 'completed' && (
+                    <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
+                  )}
                 </Button>
+                
+                <Button 
+                  className="w-full justify-start" 
+                  variant="outline"
+                  onClick={() => handleRunStep('draft')}
+                  disabled={isRunning || selectedChapter.sceneBrief !== 'completed'}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Draft Chapter
+                  {selectedChapter.draft === 'completed' && (
+                    <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
+                  )}
+                </Button>
+                
+                <Button 
+                  className="w-full justify-start" 
+                  variant="outline"
+                  onClick={() => handleRunStep('improve')}
+                  disabled={isRunning || selectedChapter.draft !== 'completed'}
+                >
+                  <Play className="w-4 h-4" />
+                  Analyze & Improve
+                  {selectedChapter.improvePlan === 'completed' && (
+                    <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
+                  )}
+                </Button>
+                
+                <Button 
+                  className="w-full justify-start" 
+                  variant="outline"
+                  onClick={() => handleRunStep('final')}
+                  disabled={isRunning || selectedChapter.improvePlan !== 'completed'}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Apply Improvements
+                  {selectedChapter.final === 'completed' && (
+                    <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
+                  )}
+                </Button>
+
+                <div className="pt-2">
+                  <Button 
+                    className="w-full" 
+                    size="lg"
+                    onClick={() => handleRunStep('full')}
+                    disabled={isRunning || selectedChapter.final === 'completed'}
+                  >
+                    <Zap className="w-4 h-4" />
+                    {isRunning ? 'Running...' : 'Run Full Pipeline'}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PhaseTimeline } from '@/components/shared/PhaseTimeline';
-import { PhaseCard } from '@/components/shared/PhaseCard';
 import { ArtifactCard } from '@/components/shared/ArtifactCard';
 import { ContextDrawer } from '@/components/shared/ContextDrawer';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { mockPhases, mockArtifacts, Phase } from '@/lib/mockData';
 import { 
   Play, 
@@ -16,7 +17,9 @@ import {
   CheckCircle2, 
   AlertCircle,
   ChevronRight,
-  FileText
+  FileText,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 
 export default function WorkflowCockpit() {
@@ -24,12 +27,14 @@ export default function WorkflowCockpit() {
   const [phases] = useState(mockPhases);
   const [artifacts] = useState(mockArtifacts);
   const [currentPhase, setCurrentPhase] = useState(6);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(true);
+  const [isContextOpen, setIsContextOpen] = useState(true);
+  const [isPhasesOpen, setIsPhasesOpen] = useState(true);
+  const [isOutputModalOpen, setIsOutputModalOpen] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
 
   const activePhase = phases.find((p) => p.id === currentPhase) || phases[5];
 
   const getRequiredInputsStatus = (phase: Phase) => {
-    // Mock: return status of required inputs
     const completed = phase.requiredInputs.length - (phase.status === 'not-started' ? 2 : 0);
     return {
       completed,
@@ -40,27 +45,96 @@ export default function WorkflowCockpit() {
 
   const inputsStatus = getRequiredInputsStatus(activePhase);
 
+  // Mock output content based on phase
+  const getPhaseOutputContent = () => {
+    switch (activePhase.id) {
+      case 1:
+        return "# Research Results\n\n## Genre Analysis\n- Fantasy market trends show strong demand for epic narratives\n- Character-driven stories are performing well\n\n## Competitive Titles\n1. The Name of the Wind\n2. The Way of Kings\n3. Mistborn";
+      case 2:
+        return "# Series Outline\n\n## Arc 1: The Awakening (Books 1-3)\n- Introduction to the world\n- Discovery of the ancient prophecy\n\n## Arc 2: The Conflict (Books 4-6)\n- Rising tensions between kingdoms\n- Hero's transformation";
+      case 3:
+        return "# Call Sheet\n\n## Main Characters\n- **Elena Thornwood**: Protagonist, reluctant queen\n- **Marcus Vale**: Mentor figure, retired knight\n\n## Key Locations\n- Castle Thornwood\n- The Whispering Forest";
+      case 4:
+        return "# Characters & Worldbuilding\n\n## Character Profiles\n### Elena Thornwood\n- Age: 24\n- Role: Reluctant heir to the throne\n- Motivation: Protect her people\n\n## World Details\n- Magic system based on elemental bonds\n- Three major kingdoms in alliance";
+      case 5:
+        return "# Chapter Outline\n\n## Chapter 1: The Summons\n- Elena receives urgent message\n- Introduction to court politics\n\n## Chapter 2: Hidden Truths\n- Discovery of the ancient library\n- First hint of magical ability";
+      case 6:
+        return "# Chapter Writing Progress\n\nCompleted chapters: 5/24\n\nReady for final compilation.\n\n[View in Chapter Studio for detailed editing]";
+      case 7:
+        return "# Final Manuscript\n\nAll chapters compiled and ready for export.";
+      default:
+        return "No output available yet.";
+    }
+  };
+
+  const handleViewOutputs = () => {
+    setIsOutputModalOpen(true);
+  };
+
+  const handleEditInEditor = () => {
+    if (activePhase.id === 6) {
+      navigate('/chapter-studio');
+    } else {
+      // For other phases, could open a dedicated editor
+      // For now, just show a toast or navigate
+      navigate('/chapter-studio');
+    }
+  };
+
+  const handleRerun = () => {
+    setIsRunning(true);
+    setTimeout(() => {
+      setIsRunning(false);
+    }, 2000);
+  };
+
   return (
     <AppLayout>
-      <div className={`flex transition-all duration-300 ${isDrawerOpen ? 'pr-80' : ''}`}>
-        {/* Left sidebar - Phase Timeline */}
-        <div className="w-72 shrink-0 border-r border-border bg-sidebar/50 p-4 min-h-[calc(100vh-4rem)]">
-          <div className="mb-6">
-            <h2 className="font-display text-lg font-semibold mb-1">The Forgotten Kingdom</h2>
-            <p className="text-sm text-muted-foreground">Fantasy • 24 chapters</p>
-          </div>
+      <div className={`flex transition-all duration-300 ${isContextOpen ? 'pr-80' : ''}`}>
+        {/* Left sidebar toggle when closed */}
+        {!isPhasesOpen && (
+          <Button
+            variant="glass"
+            size="icon"
+            className="fixed left-4 top-20 z-40"
+            onClick={() => setIsPhasesOpen(true)}
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+          </Button>
+        )}
 
-          <div className="mb-4">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Workflow Phases
-            </span>
-          </div>
+        {/* Left sidebar - Phases */}
+        <div className={`shrink-0 border-r border-border bg-sidebar/50 min-h-[calc(100vh-4rem)] transition-all duration-300 ${
+          isPhasesOpen ? 'w-72' : 'w-0 overflow-hidden'
+        }`}>
+          <div className="w-72">
+            {/* Header with collapse button */}
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h3 className="font-display text-lg font-semibold">Phases</h3>
+              <Button variant="ghost" size="icon" onClick={() => setIsPhasesOpen(false)}>
+                <PanelLeftClose className="w-4 h-4" />
+              </Button>
+            </div>
 
-          <PhaseTimeline
-            phases={phases}
-            currentPhase={currentPhase}
-            onPhaseClick={(phase) => setCurrentPhase(phase.id)}
-          />
+            <div className="p-4">
+              <div className="mb-6">
+                <h2 className="font-display text-lg font-semibold mb-1">The Forgotten Kingdom</h2>
+                <p className="text-sm text-muted-foreground">Fantasy • 24 chapters</p>
+              </div>
+
+              <div className="mb-4">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Workflow Phases
+                </span>
+              </div>
+
+              <PhaseTimeline
+                phases={phases}
+                currentPhase={currentPhase}
+                onPhaseClick={(phase) => setCurrentPhase(phase.id)}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Main content */}
@@ -155,25 +229,34 @@ export default function WorkflowCockpit() {
             <div className="flex items-center gap-3 pt-4 border-t border-border">
               <Button 
                 size="lg" 
-                disabled={activePhase.status === 'completed'}
+                disabled={activePhase.status === 'completed' || isRunning}
                 className="min-w-[140px]"
               >
                 <Play className="w-4 h-4" />
-                {activePhase.status === 'in-progress' ? 'Continue Phase' : 'Run Phase'}
+                {isRunning ? 'Running...' : activePhase.status === 'in-progress' ? 'Continue Phase' : 'Run Phase'}
               </Button>
-              <Button variant="outline" disabled={activePhase.status === 'not-started'}>
+              <Button 
+                variant="outline" 
+                disabled={activePhase.status === 'not-started'}
+                onClick={handleViewOutputs}
+              >
                 <Eye className="w-4 h-4" />
                 View Outputs
               </Button>
-              <Button variant="outline" disabled={activePhase.status === 'not-started'}>
+              <Button 
+                variant="outline" 
+                disabled={activePhase.status === 'not-started'}
+                onClick={handleEditInEditor}
+              >
                 <Edit className="w-4 h-4" />
                 Edit in Editor
               </Button>
               <Button 
                 variant="ghost" 
-                disabled={activePhase.status !== 'completed'}
+                disabled={activePhase.status !== 'completed' || isRunning}
+                onClick={handleRerun}
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className={`w-4 h-4 ${isRunning ? 'animate-spin' : ''}`} />
                 Re-run
               </Button>
             </div>
@@ -199,10 +282,37 @@ export default function WorkflowCockpit() {
         {/* Context Drawer */}
         <ContextDrawer
           artifacts={artifacts}
-          isOpen={isDrawerOpen}
-          onToggle={() => setIsDrawerOpen(!isDrawerOpen)}
+          isOpen={isContextOpen}
+          onToggle={() => setIsContextOpen(!isContextOpen)}
         />
       </div>
+
+      {/* Output Modal */}
+      <Dialog open={isOutputModalOpen} onOpenChange={setIsOutputModalOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl">
+              Phase {activePhase.id} Outputs: {activePhase.name}
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[60vh] pr-4">
+            <div className="prose prose-invert max-w-none">
+              <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
+                {getPhaseOutputContent()}
+              </pre>
+            </div>
+          </ScrollArea>
+          <div className="flex justify-end gap-3 pt-4 border-t border-border">
+            <Button variant="outline" onClick={() => setIsOutputModalOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={handleEditInEditor}>
+              <Edit className="w-4 h-4" />
+              Edit in Editor
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
