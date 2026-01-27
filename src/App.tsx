@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ProjectPicker from "./pages/ProjectPicker";
 import WorkflowCockpit from "./pages/WorkflowCockpit";
 import ChapterStudio from "./pages/ChapterStudio";
+import PhaseEditor from "./pages/PhaseEditor";
 import CompileExport from "./pages/CompileExport";
 import NotFound from "./pages/NotFound";
 
@@ -21,6 +22,7 @@ const App = () => (
           <Route path="/" element={<ProjectPicker />} />
           <Route path="/cockpit" element={<WorkflowCockpit />} />
           <Route path="/chapter-studio" element={<ChapterStudio />} />
+          <Route path="/phase-editor/:phaseId" element={<PhaseEditor />} />
           <Route path="/compile" element={<CompileExport />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
