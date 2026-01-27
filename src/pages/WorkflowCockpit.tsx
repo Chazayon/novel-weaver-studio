@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PhaseTimeline } from '@/components/shared/PhaseTimeline';
 import { ArtifactCard } from '@/components/shared/ArtifactCard';
-import { ContextDrawer } from '@/components/shared/ContextDrawer';
+import { CollapsiblePanel } from '@/components/shared/CollapsiblePanel';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -18,8 +18,8 @@ import {
   AlertCircle,
   ChevronRight,
   FileText,
-  PanelLeftClose,
-  PanelLeftOpen
+  Layers,
+  Pin
 } from 'lucide-react';
 
 export default function WorkflowCockpit() {
@@ -74,10 +74,11 @@ export default function WorkflowCockpit() {
   const handleEditInEditor = () => {
     if (activePhase.id === 6) {
       navigate('/chapter-studio');
+    } else if (activePhase.id === 7) {
+      navigate('/compile');
     } else {
-      // For other phases, could open a dedicated editor
-      // For now, just show a toast or navigate
-      navigate('/chapter-studio');
+      // Navigate to phase-specific editor for phases 1-5
+      navigate(`/phase-editor/${activePhase.id}`);
     }
   };
 
@@ -88,54 +89,38 @@ export default function WorkflowCockpit() {
     }, 2000);
   };
 
+  const pinnedArtifacts = artifacts.filter(a => a.pinned);
+
   return (
     <AppLayout>
-      <div className={`flex transition-all duration-300 ${isContextOpen ? 'pr-80' : ''}`}>
-        {/* Left sidebar toggle when closed */}
-        {!isPhasesOpen && (
-          <Button
-            variant="glass"
-            size="icon"
-            className="fixed left-4 top-20 z-40"
-            onClick={() => setIsPhasesOpen(true)}
-          >
-            <PanelLeftOpen className="w-4 h-4" />
-          </Button>
-        )}
-
+      <div className="flex h-[calc(100vh-4rem)]">
         {/* Left sidebar - Phases */}
-        <div className={`shrink-0 border-r border-border bg-sidebar/50 min-h-[calc(100vh-4rem)] transition-all duration-300 ${
-          isPhasesOpen ? 'w-72' : 'w-0 overflow-hidden'
-        }`}>
-          <div className="w-72">
-            {/* Header with collapse button */}
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <h3 className="font-display text-lg font-semibold">Phases</h3>
-              <Button variant="ghost" size="icon" onClick={() => setIsPhasesOpen(false)}>
-                <PanelLeftClose className="w-4 h-4" />
-              </Button>
+        <CollapsiblePanel
+          title="Phases"
+          icon={<Layers className="w-4 h-4" />}
+          isOpen={isPhasesOpen}
+          onToggle={() => setIsPhasesOpen(!isPhasesOpen)}
+          side="left"
+        >
+          <div className="p-4">
+            <div className="mb-6">
+              <h2 className="font-display text-lg font-semibold mb-1">The Forgotten Kingdom</h2>
+              <p className="text-sm text-muted-foreground">Fantasy • 24 chapters</p>
             </div>
 
-            <div className="p-4">
-              <div className="mb-6">
-                <h2 className="font-display text-lg font-semibold mb-1">The Forgotten Kingdom</h2>
-                <p className="text-sm text-muted-foreground">Fantasy • 24 chapters</p>
-              </div>
-
-              <div className="mb-4">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Workflow Phases
-                </span>
-              </div>
-
-              <PhaseTimeline
-                phases={phases}
-                currentPhase={currentPhase}
-                onPhaseClick={(phase) => setCurrentPhase(phase.id)}
-              />
+            <div className="mb-4">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Workflow Phases
+              </span>
             </div>
+
+            <PhaseTimeline
+              phases={phases}
+              currentPhase={currentPhase}
+              onPhaseClick={(phase) => setCurrentPhase(phase.id)}
+            />
           </div>
-        </div>
+        </CollapsiblePanel>
 
         {/* Main content */}
         <div className="flex-1 p-8 min-h-[calc(100vh-4rem)]">
@@ -279,12 +264,45 @@ export default function WorkflowCockpit() {
           </div>
         </div>
 
-        {/* Context Drawer */}
-        <ContextDrawer
-          artifacts={artifacts}
+        {/* Context Panel */}
+        <CollapsiblePanel
+          title="Context"
+          icon={<Pin className="w-4 h-4" />}
           isOpen={isContextOpen}
           onToggle={() => setIsContextOpen(!isContextOpen)}
-        />
+          side="right"
+        >
+          <div className="p-4 space-y-6">
+            {/* Pinned artifacts */}
+            {pinnedArtifacts.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Pin className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Pinned
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {pinnedArtifacts.map((artifact) => (
+                    <ArtifactCard key={artifact.id} artifact={artifact} compact />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* All artifacts */}
+            <div>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                All Artifacts
+              </span>
+              <div className="space-y-2 mt-3">
+                {artifacts.filter(a => !a.pinned).map((artifact) => (
+                  <ArtifactCard key={artifact.id} artifact={artifact} compact />
+                ))}
+              </div>
+            </div>
+          </div>
+        </CollapsiblePanel>
       </div>
 
       {/* Output Modal */}
