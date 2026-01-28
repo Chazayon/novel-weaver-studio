@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
+import { usePanelState } from '@/hooks/usePanelState';
 import { 
   Select, 
   SelectContent, 
@@ -46,8 +47,8 @@ export default function ChapterStudio() {
   const [targetWordCount, setTargetWordCount] = useState([3000]);
   const [selectedTone, setSelectedTone] = useState('neutral');
   const [isRunning, setIsRunning] = useState(false);
-  const [isChaptersOpen, setIsChaptersOpen] = useState(true);
-  const [isControlsOpen, setIsControlsOpen] = useState(true);
+  const [isChaptersOpen, toggleChaptersOpen] = usePanelState('chapter-studio-chapters', true);
+  const [isControlsOpen, toggleControlsOpen] = usePanelState('chapter-studio-controls', true);
 
   // Mock content
   const chapterContent = {
@@ -77,23 +78,23 @@ export default function ChapterStudio() {
 
   return (
     <AppLayout>
-      <div className="flex h-[calc(100vh-4rem)]">
+      <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
         {/* Left - Chapter list */}
         <CollapsiblePanel
           title="Chapters"
           icon={<List className="w-4 h-4" />}
           isOpen={isChaptersOpen}
-          onToggle={() => setIsChaptersOpen(!isChaptersOpen)}
+          onToggle={toggleChaptersOpen}
           side="left"
         >
-          <div className="p-4 border-b border-border">
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <div className="p-3 lg:p-4 border-b border-border">
+            <div className="flex items-center gap-3 lg:gap-4 text-xs lg:text-sm text-muted-foreground">
               <span>{completedChapters}/{chapters.length} complete</span>
               <span>{totalWords.toLocaleString()} words</span>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 max-h-[calc(100vh-12rem)]">
+          <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-1.5 lg:space-y-2 max-h-[calc(100vh-12rem)]">
             {chapters.map((chapter) => (
               <ChapterRow
                 key={chapter.id}
@@ -107,14 +108,15 @@ export default function ChapterStudio() {
         </CollapsiblePanel>
 
         {/* Center - Editor workspace */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Chapter header */}
-          <div className="p-4 border-b border-border flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
+          <div className="p-3 lg:p-4 border-b border-border flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 lg:gap-4 min-w-0">
+              <div className="flex items-center gap-1">
                 <Button 
                   variant="ghost" 
                   size="icon"
+                  className="h-8 w-8"
                   onClick={() => {
                     const idx = chapters.findIndex(c => c.id === selectedChapter.id);
                     if (idx > 0) setSelectedChapter(chapters[idx - 1]);
@@ -126,6 +128,7 @@ export default function ChapterStudio() {
                 <Button 
                   variant="ghost" 
                   size="icon"
+                  className="h-8 w-8"
                   onClick={() => {
                     const idx = chapters.findIndex(c => c.id === selectedChapter.id);
                     if (idx < chapters.length - 1) setSelectedChapter(chapters[idx + 1]);
@@ -135,22 +138,22 @@ export default function ChapterStudio() {
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
-              <div>
-                <h3 className="font-display text-xl font-semibold">
+              <div className="min-w-0">
+                <h3 className="font-display text-base lg:text-xl font-semibold truncate">
                   Chapter {selectedChapter.number}: {selectedChapter.title}
                 </h3>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs lg:text-sm text-muted-foreground">
                   {selectedChapter.wordCount.toLocaleString()} words
                 </p>
               </div>
             </div>
-            <Badge variant={selectedChapter.final === 'completed' ? 'success' : 'info'}>
+            <Badge variant={selectedChapter.final === 'completed' ? 'success' : 'info'} className="shrink-0">
               {selectedChapter.final === 'completed' ? 'Complete' : 'In Progress'}
             </Badge>
           </div>
 
           {/* Editor tabs */}
-          <div className="flex-1 p-4 overflow-hidden">
+          <div className="flex-1 p-2 lg:p-4 overflow-hidden">
             <EditorTabs
               sceneBrief={chapterContent.sceneBrief}
               draft={chapterContent.draft}
@@ -165,7 +168,7 @@ export default function ChapterStudio() {
           title="Controls"
           icon={<Settings className="w-4 h-4" />}
           isOpen={isControlsOpen}
-          onToggle={() => setIsControlsOpen(!isControlsOpen)}
+          onToggle={toggleControlsOpen}
           side="right"
         >
           <div className="flex-1 overflow-y-auto p-4 space-y-6 max-h-[calc(100vh-8rem)]">

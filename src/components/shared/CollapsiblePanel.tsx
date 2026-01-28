@@ -30,7 +30,7 @@ export function CollapsiblePanel({
       {!isOpen && (
         <div
           className={cn(
-            "shrink-0 w-12 bg-sidebar/80 backdrop-blur-xl border-border flex flex-col items-center py-4 cursor-pointer hover:bg-sidebar transition-colors",
+            "shrink-0 w-10 lg:w-12 bg-sidebar/80 backdrop-blur-xl border-border flex flex-col items-center py-3 lg:py-4 cursor-pointer hover:bg-sidebar transition-colors",
             isLeft ? "border-r" : "border-l",
             className
           )}
@@ -40,7 +40,7 @@ export function CollapsiblePanel({
           <Button
             variant="ghost"
             size="icon"
-            className="h-10 w-10 rounded-full bg-muted/50 hover:bg-muted mb-4"
+            className="h-8 w-8 lg:h-10 lg:w-10 rounded-full bg-muted/50 hover:bg-muted mb-3 lg:mb-4"
             onClick={(e) => {
               e.stopPropagation();
               onToggle();
@@ -55,14 +55,14 @@ export function CollapsiblePanel({
 
           {/* Icon */}
           {icon && (
-            <div className="text-primary mb-3">
+            <div className="text-primary mb-2 lg:mb-3">
               {icon}
             </div>
           )}
 
           {/* Vertical label */}
           <div 
-            className="writing-vertical text-sm font-medium text-muted-foreground tracking-wider uppercase"
+            className="writing-vertical text-xs lg:text-sm font-medium text-muted-foreground tracking-wider uppercase"
             style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
           >
             {title}
@@ -74,29 +74,29 @@ export function CollapsiblePanel({
       {isOpen && (
         <div
           className={cn(
-            "shrink-0 w-80 bg-sidebar/50 backdrop-blur-xl flex flex-col transition-all duration-300",
+            "shrink-0 w-64 lg:w-80 bg-sidebar/50 backdrop-blur-xl flex flex-col transition-all duration-300",
             isLeft ? "border-r border-border" : "border-l border-border",
             className
           )}
         >
           {/* Header with collapse button */}
-          <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center justify-between p-3 lg:p-4 border-b border-border">
             {isLeft ? (
               <>
-                <h3 className="font-display text-lg font-semibold flex items-center gap-2">
+                <h3 className="font-display text-base lg:text-lg font-semibold flex items-center gap-2">
                   {icon && <span className="text-primary">{icon}</span>}
                   {title}
                 </h3>
-                <Button variant="ghost" size="icon" onClick={onToggle}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onToggle}>
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
               </>
             ) : (
               <>
-                <Button variant="ghost" size="icon" onClick={onToggle}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onToggle}>
                   <ChevronRight className="w-4 h-4" />
                 </Button>
-                <h3 className="font-display text-lg font-semibold flex items-center gap-2">
+                <h3 className="font-display text-base lg:text-lg font-semibold flex items-center gap-2">
                   {icon && <span className="text-primary">{icon}</span>}
                   {title}
                 </h3>
