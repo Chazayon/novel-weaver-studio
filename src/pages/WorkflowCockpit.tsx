@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { usePanelState } from '@/hooks/usePanelState';
 import { mockPhases, mockArtifacts, Phase } from '@/lib/mockData';
 import { 
   Play, 
@@ -27,8 +28,8 @@ export default function WorkflowCockpit() {
   const [phases] = useState(mockPhases);
   const [artifacts] = useState(mockArtifacts);
   const [currentPhase, setCurrentPhase] = useState(6);
-  const [isContextOpen, setIsContextOpen] = useState(true);
-  const [isPhasesOpen, setIsPhasesOpen] = useState(true);
+  const [isPhasesOpen, togglePhasesOpen] = usePanelState('cockpit-phases', true);
+  const [isContextOpen, toggleContextOpen] = usePanelState('cockpit-context', true);
   const [isOutputModalOpen, setIsOutputModalOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -93,19 +94,19 @@ export default function WorkflowCockpit() {
 
   return (
     <AppLayout>
-      <div className="flex h-[calc(100vh-4rem)]">
+      <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
         {/* Left sidebar - Phases */}
         <CollapsiblePanel
           title="Phases"
           icon={<Layers className="w-4 h-4" />}
           isOpen={isPhasesOpen}
-          onToggle={() => setIsPhasesOpen(!isPhasesOpen)}
+          onToggle={togglePhasesOpen}
           side="left"
         >
           <div className="p-4">
             <div className="mb-6">
-              <h2 className="font-display text-lg font-semibold mb-1">The Forgotten Kingdom</h2>
-              <p className="text-sm text-muted-foreground">Fantasy • 24 chapters</p>
+              <h2 className="font-display text-base lg:text-lg font-semibold mb-1">The Forgotten Kingdom</h2>
+              <p className="text-xs lg:text-sm text-muted-foreground">Fantasy • 24 chapters</p>
             </div>
 
             <div className="mb-4">
@@ -123,25 +124,25 @@ export default function WorkflowCockpit() {
         </CollapsiblePanel>
 
         {/* Main content */}
-        <div className="flex-1 p-8 min-h-[calc(100vh-4rem)]">
+        <div className="flex-1 p-4 md:p-6 lg:p-8 min-h-0 overflow-y-auto">
           {/* Current phase header */}
-          <div className="mb-8">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+          <div className="mb-6 lg:mb-8">
+            <div className="flex items-center gap-2 text-xs lg:text-sm text-muted-foreground mb-2">
               <span>Phase {activePhase.id}</span>
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3 h-3 lg:w-4 lg:h-4" />
               <span className="text-foreground">{activePhase.name}</span>
             </div>
-            <h1 className="font-display text-3xl font-bold gradient-text mb-2">
+            <h1 className="font-display text-xl md:text-2xl lg:text-3xl font-bold gradient-text mb-2">
               {activePhase.name}
             </h1>
-            <p className="text-muted-foreground max-w-2xl">
+            <p className="text-sm lg:text-base text-muted-foreground max-w-2xl">
               {activePhase.description}
             </p>
           </div>
 
           {/* Phase card */}
-          <div className="glass-card p-6 mb-8">
-            <div className="flex items-start justify-between mb-6">
+          <div className="glass-card p-4 lg:p-6 mb-6 lg:mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
               <div>
                 <Badge variant={
                   activePhase.status === 'completed' ? 'success' :
@@ -150,13 +151,13 @@ export default function WorkflowCockpit() {
                   {activePhase.status === 'completed' ? 'Completed' :
                    activePhase.status === 'in-progress' ? 'In Progress' : 'Not Started'}
                 </Badge>
-                <p className="text-sm text-muted-foreground mt-2">
+                <p className="text-xs lg:text-sm text-muted-foreground mt-2">
                   Estimated duration: {activePhase.duration}
                 </p>
               </div>
               
               {activePhase.id === 6 && (
-                <Button onClick={() => navigate('/chapter-studio')}>
+                <Button onClick={() => navigate('/chapter-studio')} size="sm" className="w-full sm:w-auto">
                   <FileText className="w-4 h-4" />
                   Open Chapter Studio
                 </Button>
@@ -177,18 +178,18 @@ export default function WorkflowCockpit() {
                   return (
                     <div
                       key={input}
-                      className="flex items-center gap-3 p-3 rounded-lg bg-muted/30"
+                      className="flex items-center gap-3 p-2 lg:p-3 rounded-lg bg-muted/30"
                     >
                       {isReady ? (
                         <CheckCircle2 className="w-4 h-4 text-status-success shrink-0" />
                       ) : (
                         <AlertCircle className="w-4 h-4 text-status-warning shrink-0" />
                       )}
-                      <span className={isReady ? 'text-foreground' : 'text-muted-foreground'}>
+                      <span className={`text-sm ${isReady ? 'text-foreground' : 'text-muted-foreground'}`}>
                         {input}
                       </span>
                       {!isReady && (
-                        <Badge variant="warning" className="ml-auto">
+                        <Badge variant="warning" className="ml-auto text-xs">
                           Missing
                         </Badge>
                       )}
@@ -203,7 +204,7 @@ export default function WorkflowCockpit() {
               <h3 className="text-sm font-medium mb-3">Expected Outputs</h3>
               <div className="flex flex-wrap gap-2">
                 {activePhase.outputs.map((output) => (
-                  <Badge key={output} variant="outline">
+                  <Badge key={output} variant="outline" className="text-xs">
                     {output}
                   </Badge>
                 ))}
@@ -211,46 +212,54 @@ export default function WorkflowCockpit() {
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-3 pt-4 border-t border-border">
+            <div className="flex flex-wrap items-center gap-2 lg:gap-3 pt-4 border-t border-border">
               <Button 
-                size="lg" 
+                size="default" 
                 disabled={activePhase.status === 'completed' || isRunning}
-                className="min-w-[140px]"
+                className="min-w-[120px] lg:min-w-[140px]"
               >
                 <Play className="w-4 h-4" />
-                {isRunning ? 'Running...' : activePhase.status === 'in-progress' ? 'Continue Phase' : 'Run Phase'}
+                <span className="hidden sm:inline">
+                  {isRunning ? 'Running...' : activePhase.status === 'in-progress' ? 'Continue Phase' : 'Run Phase'}
+                </span>
+                <span className="sm:hidden">
+                  {isRunning ? '...' : 'Run'}
+                </span>
               </Button>
               <Button 
                 variant="outline" 
+                size="sm"
                 disabled={activePhase.status === 'not-started'}
                 onClick={handleViewOutputs}
               >
                 <Eye className="w-4 h-4" />
-                View Outputs
+                <span className="hidden md:inline">View Outputs</span>
               </Button>
               <Button 
                 variant="outline" 
+                size="sm"
                 disabled={activePhase.status === 'not-started'}
                 onClick={handleEditInEditor}
               >
                 <Edit className="w-4 h-4" />
-                Edit in Editor
+                <span className="hidden md:inline">Edit in Editor</span>
               </Button>
               <Button 
                 variant="ghost" 
+                size="sm"
                 disabled={activePhase.status !== 'completed' || isRunning}
                 onClick={handleRerun}
               >
                 <RefreshCw className={`w-4 h-4 ${isRunning ? 'animate-spin' : ''}`} />
-                Re-run
+                <span className="hidden lg:inline">Re-run</span>
               </Button>
             </div>
           </div>
 
           {/* Recent artifacts */}
           <div>
-            <h3 className="text-lg font-display font-semibold mb-4">Recent Artifacts</h3>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <h3 className="text-base lg:text-lg font-display font-semibold mb-4">Recent Artifacts</h3>
+            <div className="grid gap-3 lg:gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
               {artifacts.slice(0, 3).map((artifact, index) => (
                 <div
                   key={artifact.id}
@@ -269,7 +278,7 @@ export default function WorkflowCockpit() {
           title="Context"
           icon={<Pin className="w-4 h-4" />}
           isOpen={isContextOpen}
-          onToggle={() => setIsContextOpen(!isContextOpen)}
+          onToggle={toggleContextOpen}
           side="right"
         >
           <div className="p-4 space-y-6">

@@ -1,20 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { CollapsiblePanel } from '@/components/shared/CollapsiblePanel';
 import { ArtifactCard } from '@/components/shared/ArtifactCard';
+import { MarkdownEditor } from '@/components/shared/MarkdownEditor';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
+import { usePanelState } from '@/hooks/usePanelState';
 import { mockPhases, mockArtifacts } from '@/lib/mockData';
 import { 
-  Save, 
-  Copy, 
-  History, 
   ArrowLeft,
   Layers,
   FileText,
-  Sparkles,
   RefreshCw,
   CheckCircle2
 } from 'lucide-react';
@@ -28,8 +25,8 @@ export default function PhaseEditor() {
   
   const [phases] = useState(mockPhases);
   const [artifacts] = useState(mockArtifacts);
-  const [isPhasesOpen, setIsPhasesOpen] = useState(true);
-  const [isContextOpen, setIsContextOpen] = useState(true);
+  const [isPhasesOpen, togglePhasesOpen] = usePanelState('phase-editor-phases', true);
+  const [isContextOpen, toggleContextOpen] = usePanelState('phase-editor-context', true);
   const [isSaving, setIsSaving] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
 
@@ -172,6 +169,11 @@ export default function PhaseEditor() {
 
   const [content, setContent] = useState(getPhaseContent());
 
+  // Update content when phase changes
+  useEffect(() => {
+    setContent(getPhaseContent());
+  }, [currentPhaseId]);
+
   const handleSave = () => {
     setIsSaving(true);
     setTimeout(() => {
@@ -184,32 +186,28 @@ export default function PhaseEditor() {
     setIsRegenerating(true);
     setTimeout(() => {
       setIsRegenerating(false);
+      setContent(getPhaseContent());
       toast.success('Content regenerated');
     }, 2000);
-  };
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(content);
-    toast.success('Copied to clipboard');
   };
 
   const pinnedArtifacts = artifacts.filter(a => a.pinned);
 
   return (
     <AppLayout>
-      <div className="flex h-[calc(100vh-4rem)]">
+      <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
         {/* Left - Phases panel */}
         <CollapsiblePanel
           title="Phases"
           icon={<Layers className="w-4 h-4" />}
           isOpen={isPhasesOpen}
-          onToggle={() => setIsPhasesOpen(!isPhasesOpen)}
+          onToggle={togglePhasesOpen}
           side="left"
         >
-          <div className="p-4">
-            <div className="mb-6">
-              <h2 className="font-display text-lg font-semibold mb-1">The Forgotten Kingdom</h2>
-              <p className="text-sm text-muted-foreground">Fantasy • 24 chapters</p>
+          <div className="p-3 lg:p-4">
+            <div className="mb-4 lg:mb-6">
+              <h2 className="font-display text-base lg:text-lg font-semibold mb-1">The Forgotten Kingdom</h2>
+              <p className="text-xs lg:text-sm text-muted-foreground">Fantasy • 24 chapters</p>
             </div>
 
             <div className="space-y-1">
@@ -218,28 +216,28 @@ export default function PhaseEditor() {
                   key={phase.id}
                   onClick={() => navigate(`/phase-editor/${phase.id}`)}
                   className={cn(
-                    "w-full text-left p-3 rounded-lg transition-all",
+                    "w-full text-left p-2 lg:p-3 rounded-lg transition-all",
                     phase.id === currentPhaseId
                       ? "bg-primary/20 border border-primary/50"
                       : "hover:bg-muted/50"
                   )}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 lg:gap-3">
                     <div className={cn(
-                      "w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
+                      "w-5 h-5 lg:w-6 lg:h-6 rounded-full flex items-center justify-center text-xs font-medium shrink-0",
                       phase.status === 'completed' ? "bg-status-success text-white" :
                       phase.status === 'in-progress' ? "bg-primary text-white" :
                       "bg-muted text-muted-foreground"
                     )}>
                       {phase.status === 'completed' ? (
-                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <CheckCircle2 className="w-3 h-3 lg:w-3.5 lg:h-3.5" />
                       ) : (
                         phase.id
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={cn(
-                        "text-sm font-medium truncate",
+                        "text-xs lg:text-sm font-medium truncate",
                         phase.id === currentPhaseId ? "text-primary" : "text-foreground"
                       )}>
                         {phase.name}
@@ -250,9 +248,10 @@ export default function PhaseEditor() {
               ))}
             </div>
 
-            <div className="mt-6 pt-4 border-t border-border">
+            <div className="mt-4 lg:mt-6 pt-4 border-t border-border">
               <Button 
                 variant="outline" 
+                size="sm"
                 className="w-full"
                 onClick={() => navigate('/cockpit')}
               >
@@ -264,19 +263,19 @@ export default function PhaseEditor() {
         </CollapsiblePanel>
 
         {/* Center - Editor */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Header */}
-          <div className="p-4 border-b border-border flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+          <div className="p-3 lg:p-4 border-b border-border flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-xs lg:text-sm text-muted-foreground mb-1">
                 <span>Phase {currentPhase.id}</span>
               </div>
-              <h1 className="font-display text-xl font-semibold">
+              <h1 className="font-display text-base lg:text-xl font-semibold truncate">
                 {currentPhase.name}
               </h1>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <Badge variant={
                 currentPhase.status === 'completed' ? 'success' :
                 currentPhase.status === 'in-progress' ? 'info' : 'muted'
@@ -284,58 +283,31 @@ export default function PhaseEditor() {
                 {currentPhase.status === 'completed' ? 'Completed' :
                  currentPhase.status === 'in-progress' ? 'In Progress' : 'Not Started'}
               </Badge>
-
-              <div className="flex items-center gap-1 ml-4">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCopy}>
-                  <Copy className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <History className="w-4 h-4" />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8"
-                  onClick={handleSave}
-                  disabled={isSaving}
-                >
-                  <Save className={cn("w-4 h-4", isSaving && "animate-pulse")} />
-                </Button>
-              </div>
             </div>
           </div>
 
           {/* Editor area */}
-          <div className="flex-1 p-4 overflow-hidden">
-            <div className="glass-card h-full flex flex-col">
-              <Textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="flex-1 resize-none bg-transparent border-0 focus-visible:ring-0 font-mono text-sm leading-relaxed p-4"
-                placeholder="Phase output content..."
-              />
-            </div>
+          <div className="flex-1 p-2 lg:p-4 overflow-hidden">
+            <MarkdownEditor
+              value={content}
+              onChange={setContent}
+              onSave={handleSave}
+              isSaving={isSaving}
+              placeholder="Start writing your phase content..."
+            />
           </div>
 
           {/* Footer actions */}
-          <div className="p-4 border-t border-border flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {content.split(/\s+/).length} words
-            </p>
-            <div className="flex items-center gap-2">
-              <Button 
-                variant="outline" 
-                onClick={handleRegenerate}
-                disabled={isRegenerating}
-              >
-                <RefreshCw className={cn("w-4 h-4", isRegenerating && "animate-spin")} />
-                {isRegenerating ? 'Regenerating...' : 'Regenerate'}
-              </Button>
-              <Button onClick={handleSave} disabled={isSaving}>
-                <Save className="w-4 h-4" />
-                {isSaving ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </div>
+          <div className="p-3 lg:p-4 border-t border-border flex items-center justify-end">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleRegenerate}
+              disabled={isRegenerating}
+            >
+              <RefreshCw className={cn("w-4 h-4", isRegenerating && "animate-spin")} />
+              <span className="hidden sm:inline">{isRegenerating ? 'Regenerating...' : 'Regenerate'}</span>
+            </Button>
           </div>
         </div>
 
@@ -344,20 +316,20 @@ export default function PhaseEditor() {
           title="Context"
           icon={<FileText className="w-4 h-4" />}
           isOpen={isContextOpen}
-          onToggle={() => setIsContextOpen(!isContextOpen)}
+          onToggle={toggleContextOpen}
           side="right"
         >
-          <div className="p-4 space-y-6">
+          <div className="p-3 lg:p-4 space-y-4 lg:space-y-6">
             {/* Phase outputs */}
             <div>
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Expected Outputs
               </span>
-              <div className="mt-3 space-y-2">
+              <div className="mt-2 lg:mt-3 space-y-1.5 lg:space-y-2">
                 {currentPhase.outputs.map((output) => (
                   <div key={output} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30">
-                    <FileText className="w-4 h-4 text-primary" />
-                    <span className="text-sm">{output}</span>
+                    <FileText className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-primary shrink-0" />
+                    <span className="text-xs lg:text-sm truncate">{output}</span>
                   </div>
                 ))}
               </div>
@@ -368,7 +340,7 @@ export default function PhaseEditor() {
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Reference Artifacts
               </span>
-              <div className="mt-3 space-y-2">
+              <div className="mt-2 lg:mt-3 space-y-1.5 lg:space-y-2">
                 {pinnedArtifacts.map((artifact) => (
                   <ArtifactCard key={artifact.id} artifact={artifact} compact />
                 ))}
