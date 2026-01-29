@@ -134,6 +134,23 @@ export default function WorkflowCockpit() {
     }
   }, [projectId]);
 
+  // Watch for pending inputs and open review dialog
+  useEffect(() => {
+    if (!pendingInputs || pendingInputs.length === 0) return;
+
+    // Check if there's a pending input for the current running phase
+    const currentPending = pendingInputs.find(input => 
+      input.phase === currentPhase && input.workflowId === currentWorkflowId
+    );
+
+    if (currentPending && !isReviewDialogOpen) {
+      console.log('Opening review dialog for pending input:', currentPending);
+      setReviewContent(currentPending.currentContent || currentPending.prompt || '');
+      setReviewDescription(currentPending.prompt || 'Please review and provide your decision.');
+      setIsReviewDialogOpen(true);
+    }
+  }, [pendingInputs, currentPhase, currentWorkflowId, isReviewDialogOpen]);
+
   // Convert backend progress data to Phase format
   const phases: Phase[] = progressData?.phases.map(p => {
     const phaseInfo = getPhaseInfo(p.phase);
@@ -490,6 +507,25 @@ export default function WorkflowCockpit() {
         inputs.outline_template = phase1FormData.outline_template;
         inputs.prohibited_words = phase1FormData.prohibited_words;
       }
+      // For Phase 2+, check if previous phase has outputs
+      else if (phaseNum > 1) {
+        const prevPhaseOutput = phaseOutputs[phaseNum - 1];
+        if (!prevPhaseOutput) {
+          toast({
+            title: 'Missing Prerequisites',
+            description: `Phase ${phaseNum - 1} must be completed before running Phase ${phaseNum}.`,
+            variant: 'destructive',
+          });
+          setRunningPhases(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(phaseNum);
+            return newSet;
+          });
+          return;
+        }
+        // Phase 2 and beyond may need outputs from previous phases
+        // The backend should handle pulling from artifacts/database
+      }
 
       console.log('Executing phase:', { projectId, phase: phaseNum, inputs });
 
@@ -555,24 +591,35 @@ export default function WorkflowCockpit() {
 
       // Get detailed error message
       let errorMessage = 'Failed to start phase';
+      let errorDetails = '';
+      
       if (error && typeof error === 'object' && 'response' in error) {
-        const responseError = error as { response?: { data?: { detail?: unknown } } };
+        const responseError = error as { response?: { data?: { detail?: unknown; message?: string } } };
         const detail = responseError.response?.data?.detail;
+        const message = responseError.response?.data?.message;
+        
         if (Array.isArray(detail)) {
           errorMessage = detail.map((e: ValidationError) =>
             `${e.loc?.join('.') || 'field'}: ${e.msg}`
           ).join(', ');
         } else if (typeof detail === 'string') {
           errorMessage = detail;
+        } else if (message) {
+          errorMessage = message;
         }
+        
+        // Add full error details for backend debugging
+        errorDetails = JSON.stringify(responseError.response?.data, null, 2);
       } else if (error instanceof Error) {
         errorMessage = error.message;
       }
 
+      // Show error with details
       toast({
-        title: 'Error executing phase',
-        description: errorMessage,
+        title: '❌ Phase Execution Failed',
+        description: errorDetails ? `${errorMessage}\n\nBackend Error Details:\n${errorDetails}\n\nCheck your server logs for more information.` : `${errorMessage}\n\nThis is a backend error. Check your server logs for more details.`,
         variant: 'destructive',
+        duration: 10000,
       });
     }
   };
@@ -582,9 +629,9 @@ export default function WorkflowCockpit() {
     if (!currentWorkflowId) return;
 
     try {
-      await apiClient.signalWorkflow(currentWorkflowId, {
-        signal_name: 'user_review_signal',
-        args: { approved: true, feedback: '' }
+      // Respond with APPROVE decision
+      await apiClient.respondToWorkflow(currentWorkflowId, {
+        inputs: { decision: 'APPROVE' }
       });
 
       setIsReviewDialogOpen(false);
@@ -592,6 +639,9 @@ export default function WorkflowCockpit() {
         title: 'Review approved',
         description: 'Workflow will continue with approved content.',
       });
+
+      // Refetch to update UI
+      await refetchProgress();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to approve review';
       toast({
@@ -605,19 +655,34 @@ export default function WorkflowCockpit() {
   const handleRejectReview = async () => {
     if (!currentWorkflowId) return;
 
+    // Get revision notes from user
+    const revisionNotes = prompt('Please provide revision notes (what needs to be changed):');
+    if (!revisionNotes) return; // User cancelled
+
     try {
-      await apiClient.signalWorkflow(currentWorkflowId, {
-        signal_name: 'user_review_signal',
-        args: { approved: false, feedback: 'Please revise' }
+      // First, respond with REVISE decision
+      await apiClient.respondToWorkflow(currentWorkflowId, {
+        inputs: { decision: 'REVISE' }
+      });
+
+      // Wait a moment for the workflow to process and request revision notes
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Then provide the revision notes
+      await apiClient.respondToWorkflow(currentWorkflowId, {
+        inputs: { revision_notes: revisionNotes }
       });
 
       setIsReviewDialogOpen(false);
       toast({
-        title: 'Review rejected',
-        description: 'Workflow will revise the content.',
+        title: 'Revision requested',
+        description: 'Workflow will revise the content based on your notes.',
       });
+
+      // Refetch to update UI
+      await refetchProgress();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to reject review';
+      const errorMessage = error instanceof Error ? error.message : 'Failed to request revision';
       toast({
         title: 'Error',
         description: errorMessage,

@@ -157,6 +157,7 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
         # Import workflow client
         from ..workflows.client import get_temporal_client
         from ..config import settings
+        from datetime import timedelta
         
         client = await get_temporal_client()
         
@@ -174,8 +175,6 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
             )
             
             workflow_id = f"phase1-{project_id}-{uuid.uuid4()}"
-            
-            from datetime import timedelta
             
             handle = await client.start_workflow(
                 Phase1InitialSetupWorkflow.run,
