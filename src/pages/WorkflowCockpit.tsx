@@ -1,4 +1,32 @@
 import { useState, useEffect } from 'react';
+
+// Type definitions for component state
+interface PhaseCompletionData {
+  artifacts?: {
+    genre_tropes?: string;
+    style_sheet?: string;
+    context_bundle?: string;
+  };
+  result?: string;
+  output?: string;
+  [key: string]: unknown;
+}
+
+interface PhaseInputs {
+  genre?: string;
+  book_title?: string;
+  initial_ideas?: string;
+  writing_samples?: string;
+  outline_template?: string;
+  prohibited_words?: string;
+  [key: string]: string | undefined;
+}
+
+interface ValidationError {
+  loc?: string[];
+  msg: string;
+  type?: string;
+}
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PhaseTimeline } from '@/components/shared/PhaseTimeline';
@@ -34,9 +62,10 @@ import {
   ChevronRight,
   FileText,
   Layers,
-  Pin,
+  Pin, // Using Pin icon but labeling as 'Save'
   Loader2,
-  XCircle
+  XCircle,
+  Copy
 } from 'lucide-react';
 
 export default function WorkflowCockpit() {
@@ -64,7 +93,7 @@ export default function WorkflowCockpit() {
   const [phaseToRun, setPhaseToRun] = useState<number | null>(null);
   const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false);
   const [isCompletionDialogOpen, setIsCompletionDialogOpen] = useState(false);
-  const [completionData, setCompletionData] = useState<any>(null);
+  const [completionData, setCompletionData] = useState<PhaseCompletionData | null>(null);
   const [reviewContent, setReviewContent] = useState<string>('');
   const [reviewDescription, setReviewDescription] = useState<string>('');
   const [phase1FormData, setPhase1FormData] = useState({
@@ -76,11 +105,34 @@ export default function WorkflowCockpit() {
     prohibited_words: ''
   });
   const [runningPhases, setRunningPhases] = useState<Set<number>>(new Set());
-  const [phaseInputs, setPhaseInputs] = useState<Record<string, any>>({});
+  const [phaseInputs, setPhaseInputs] = useState<PhaseInputs>({});
   const [workflowStartTimes, setWorkflowStartTimes] = useState<Record<number, number>>({});
   const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [activeTab, setActiveTab] = useState<'genre_tropes' | 'style_sheet' | 'context_bundle'>('genre_tropes');
+  const [savedOutputs, setSavedOutputs] = useState<Record<string, { content: string; name: string; type: string }>>({});
+  const [phaseOutputs, setPhaseOutputs] = useState<Record<number, PhaseCompletionData>>({});
+  const [viewingArtifact, setViewingArtifact] = useState<Artifact | null>(null);
+  const [isArtifactViewOpen, setIsArtifactViewOpen] = useState(false);
+
+  // Load saved outputs and phase outputs from localStorage when projectId changes
+  useEffect(() => {
+    if (!projectId) return;
+
+    try {
+      const storedSaved = localStorage.getItem(`novel-weaver-saved-${projectId}`);
+      if (storedSaved) {
+        setSavedOutputs(JSON.parse(storedSaved));
+      }
+
+      const storedOutputs = localStorage.getItem(`novel-weaver-outputs-${projectId}`);
+      if (storedOutputs) {
+        setPhaseOutputs(JSON.parse(storedOutputs));
+      }
+    } catch (error) {
+      console.error('Failed to load from localStorage:', error);
+    }
+  }, [projectId]);
 
   // Convert backend progress data to Phase format
   const phases: Phase[] = progressData?.phases.map(p => {
@@ -98,15 +150,25 @@ export default function WorkflowCockpit() {
     };
   }) || [];
 
-  // Convert artifacts data
-  const artifacts: Artifact[] = (artifactsData || []).map((a, idx) => ({
-    id: String(idx),
-    name: a.name,
-    type: getArtifactType(a.name),
-    content: '',
-    updatedAt: new Date(a.updatedAt),
-    pinned: false,
-  }));
+  // Convert artifacts data and merge with saved outputs
+  const artifacts: Artifact[] = [
+    ...Object.entries(savedOutputs).map(([key, value]) => ({
+      id: key,
+      name: value.name,
+      type: getArtifactType(value.name),
+      content: value.content,
+      updatedAt: new Date(),
+      pinned: true,
+    })),
+    ...(artifactsData || []).map((a, idx) => ({
+      id: `backend-${idx}`,
+      name: a.name,
+      type: getArtifactType(a.name),
+      content: '',
+      updatedAt: new Date(a.updatedAt),
+      pinned: false,
+    }))
+  ];
 
   const activePhase = phases.find((p) => p.id === currentPhase) || phases[0];
   const isRunning = runningPhases.has(currentPhase);
@@ -124,21 +186,17 @@ export default function WorkflowCockpit() {
     let completed = 0;
     if (phase.status === 'completed') {
       completed = phase.requiredInputs.length;
-    } else if (phase.id === 1 && phase.status === 'in-progress') {
-      // Phase 1 is special - it collects inputs via signals during execution
-      // Don't mark inputs as complete just because it's running
-      completed = 0;
+    } else if (phase.id === 1) {
+      // For Phase 1, check if form data has been filled
+      if (phase1FormData.genre) completed++;
+      if (phase1FormData.book_title) completed++;
+      if (phase1FormData.initial_ideas) completed++;
     } else if (phase.status === 'in-progress' && !hasPendingInput) {
       // Phase is running but not waiting for input - inputs must have been provided
       completed = phase.requiredInputs.length;
-    } else if (phase.status === 'in-progress' && hasPendingInput) {
-      // Phase is waiting for input - check if we have any phaseInputs stored
-      // For Phase 1, count which inputs have been provided
-      if (phase.id === 1) {
-        if (phaseInputs.genre) completed++;
-        if (phaseInputs.book_title) completed++;
-        if (phaseInputs.initial_ideas) completed++;
-      }
+    } else if (phaseOutputs[phase.id - 1]) {
+      // Previous phase has outputs, so inputs are available
+      completed = phase.requiredInputs.length;
     }
 
     return {
@@ -173,11 +231,12 @@ export default function WorkflowCockpit() {
       });
 
       await refetchProgress();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Cancel workflow error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to cancel workflow';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to cancel workflow',
+        description: errorMessage,
         variant: 'destructive',
       });
     }
@@ -213,8 +272,20 @@ export default function WorkflowCockpit() {
 
         // Check if workflow completed
         if (statusData.status === 'completed') {
-          setCompletionData(statusData.outputs);
+          const outputs = statusData.outputs;
+          setCompletionData(outputs);
           setIsCompletionDialogOpen(true);
+
+          // Store outputs for this phase
+          setPhaseOutputs(prev => {
+            const updated = { ...prev, [currentPhase]: outputs };
+            try {
+              localStorage.setItem(`novel-weaver-outputs-${projectId}`, JSON.stringify(updated));
+            } catch (error) {
+              console.error('Failed to persist phase outputs:', error);
+            }
+            return updated;
+          });
 
           // Clear running state
           setRunningPhases(prev => {
@@ -223,7 +294,11 @@ export default function WorkflowCockpit() {
             return newSet;
           });
           setCurrentWorkflowId(null);
-          refetchProgress();
+          
+          // Force multiple refetches to ensure status updates
+          await refetchProgress();
+          setTimeout(() => refetchProgress(), 500);
+          setTimeout(() => refetchProgress(), 1500);
           return; // Stop polling
         }
 
@@ -338,26 +413,39 @@ export default function WorkflowCockpit() {
     return 'other';
   }
 
-  // Mock output content based on phase
+  // Get actual phase output content from stored data
   const getPhaseOutputContent = () => {
-    switch (activePhase.id) {
-      case 1:
-        return "# Research Results\n\n## Genre Analysis\n- Fantasy market trends show strong demand for epic narratives\n- Character-driven stories are performing well\n\n## Competitive Titles\n1. The Name of the Wind\n2. The Way of Kings\n3. Mistborn";
-      case 2:
-        return "# Series Outline\n\n## Arc 1: The Awakening (Books 1-3)\n- Introduction to the world\n- Discovery of the ancient prophecy\n\n## Arc 2: The Conflict (Books 4-6)\n- Rising tensions between kingdoms\n- Hero's transformation";
-      case 3:
-        return "# Call Sheet\n\n## Main Characters\n- **Elena Thornwood**: Protagonist, reluctant queen\n- **Marcus Vale**: Mentor figure, retired knight\n\n## Key Locations\n- Castle Thornwood\n- The Whispering Forest";
-      case 4:
-        return "# Characters & Worldbuilding\n\n## Character Profiles\n### Elena Thornwood\n- Age: 24\n- Role: Reluctant heir to the throne\n- Motivation: Protect her people\n\n## World Details\n- Magic system based on elemental bonds\n- Three major kingdoms in alliance";
-      case 5:
-        return "# Chapter Outline\n\n## Chapter 1: The Summons\n- Elena receives urgent message\n- Introduction to court politics\n\n## Chapter 2: Hidden Truths\n- Discovery of the ancient library\n- First hint of magical ability";
-      case 6:
-        return "# Chapter Writing Progress\n\nCompleted chapters: 5/24\n\nReady for final compilation.\n\n[View in Chapter Studio for detailed editing]";
-      case 7:
-        return "# Final Manuscript\n\nAll chapters compiled and ready for export.";
-      default:
-        return "No output available yet.";
+    const storedOutput = phaseOutputs[activePhase.id];
+    
+    if (!storedOutput) {
+      return "No output available yet. Please run this phase to generate outputs.";
     }
+
+    // For Phase 1, combine all artifacts into a readable format
+    if (activePhase.id === 1 && storedOutput.artifacts) {
+      let content = '';
+      if (storedOutput.artifacts.genre_tropes) {
+        content += '# Genre Tropes\n\n' + storedOutput.artifacts.genre_tropes + '\n\n';
+      }
+      if (storedOutput.artifacts.style_sheet) {
+        content += '# Style Sheet\n\n' + storedOutput.artifacts.style_sheet + '\n\n';
+      }
+      if (storedOutput.artifacts.context_bundle) {
+        content += '# Context Bundle\n\n' + storedOutput.artifacts.context_bundle;
+      }
+      return content || JSON.stringify(storedOutput, null, 2);
+    }
+
+    // For other phases, show the result or output
+    if (storedOutput.result) {
+      return storedOutput.result;
+    }
+    if (storedOutput.output) {
+      return storedOutput.output;
+    }
+
+    // Fallback to JSON representation
+    return JSON.stringify(storedOutput, null, 2);
   };
 
   const handleViewOutputs = () => {
@@ -391,7 +479,7 @@ export default function WorkflowCockpit() {
       setRunningPhases(prev => new Set(prev).add(phaseNum));
       setWorkflowStartTimes(prev => ({ ...prev, [phaseNum]: Date.now() }));
 
-      const inputs: Record<string, any> = {};
+      const inputs: PhaseInputs = {};
 
       // For Phase 1, use the form inputs
       if (phaseNum === 1) {
@@ -438,6 +526,9 @@ export default function WorkflowCockpit() {
             return newSet;
           });
 
+          // Refresh progress one more time to ensure UI is in sync
+          setTimeout(() => refetchProgress(), 500);
+
           if (phaseData.status === 'completed') {
             toast({
               title: 'Phase completed',
@@ -453,7 +544,7 @@ export default function WorkflowCockpit() {
         }
       }, 3000);
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       setRunningPhases(prev => {
         const newSet = new Set(prev);
         newSet.delete(phaseNum);
@@ -464,13 +555,15 @@ export default function WorkflowCockpit() {
 
       // Get detailed error message
       let errorMessage = 'Failed to start phase';
-      if (error?.response?.data?.detail) {
-        if (Array.isArray(error.response.data.detail)) {
-          errorMessage = error.response.data.detail.map((e: any) =>
+      if (error && typeof error === 'object' && 'response' in error) {
+        const responseError = error as { response?: { data?: { detail?: unknown } } };
+        const detail = responseError.response?.data?.detail;
+        if (Array.isArray(detail)) {
+          errorMessage = detail.map((e: ValidationError) =>
             `${e.loc?.join('.') || 'field'}: ${e.msg}`
           ).join(', ');
-        } else {
-          errorMessage = error.response.data.detail;
+        } else if (typeof detail === 'string') {
+          errorMessage = detail;
         }
       } else if (error instanceof Error) {
         errorMessage = error.message;
@@ -499,10 +592,11 @@ export default function WorkflowCockpit() {
         title: 'Review approved',
         description: 'Workflow will continue with approved content.',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to approve review';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to approve review',
+        description: errorMessage,
         variant: 'destructive',
       });
     }
@@ -522,10 +616,11 @@ export default function WorkflowCockpit() {
         title: 'Review rejected',
         description: 'Workflow will revise the content.',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to reject review';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to reject review',
+        description: errorMessage,
         variant: 'destructive',
       });
     }
@@ -563,11 +658,62 @@ export default function WorkflowCockpit() {
     } else if (activePhase.id === 7) {
       navigate('/compile');
     } else {
-      navigate(`/ phase - editor / ${activePhase.id}`);
+      navigate(`/phase-editor/${activePhase.id}`);
     }
   };
 
-  const pinnedArtifacts = artifacts.filter(a => a.pinned);
+  const savedArtifacts = artifacts.filter(a => a.pinned);
+
+  const handleSaveOutput = (outputKey: string, outputName: string, content: string) => {
+    setSavedOutputs(prev => {
+      const updated = {
+        ...prev,
+        [outputKey]: { content, name: outputName, type: outputKey }
+      };
+      // Persist to localStorage
+      try {
+        localStorage.setItem(`novel-weaver-saved-${projectId}`, JSON.stringify(updated));
+      } catch (error) {
+        console.error('Failed to persist saved outputs:', error);
+      }
+      return updated;
+    });
+    toast({
+      title: 'Output saved',
+      description: `${outputName} has been saved to context panel.`,
+    });
+  };
+
+  const handleUnsaveOutput = (outputKey: string) => {
+    setSavedOutputs(prev => {
+      const updated = { ...prev };
+      delete updated[outputKey];
+      // Persist to localStorage
+      try {
+        localStorage.setItem(`novel-weaver-saved-${projectId}`, JSON.stringify(updated));
+      } catch (error) {
+        console.error('Failed to persist saved outputs:', error);
+      }
+      return updated;
+    });
+    toast({
+      title: 'Output removed',
+      description: 'The artifact has been removed from context panel.',
+    });
+  };
+
+  const handleToggleSave = (artifact: Artifact) => {
+    if (artifact.pinned) {
+      handleUnsaveOutput(artifact.id);
+    } else {
+      handleSaveOutput(artifact.id, artifact.name, artifact.content);
+    }
+  };
+
+  const handleViewArtifact = (artifact: Artifact) => {
+    setViewingArtifact(artifact);
+    setIsArtifactViewOpen(true);
+  };
 
   return (
     <AppLayout>
@@ -768,7 +914,7 @@ export default function WorkflowCockpit() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={activePhase.status === 'not-started'}
+                disabled={!phaseOutputs[activePhase.id] && activePhase.status === 'not-started'}
                 onClick={handleViewOutputs}
               >
                 <Eye className="w-4 h-4" />
@@ -777,7 +923,7 @@ export default function WorkflowCockpit() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={activePhase.status === 'not-started'}
+                disabled={!phaseOutputs[activePhase.id] && activePhase.status === 'not-started'}
                 onClick={handleEditInEditor}
               >
                 <Edit className="w-4 h-4" />
@@ -805,7 +951,11 @@ export default function WorkflowCockpit() {
                   className="animate-fade-in"
                   style={{ animationDelay: `${index * 100}ms` }}
                 >
-                  <ArtifactCard artifact={artifact} />
+                  <ArtifactCard 
+                    artifact={artifact}
+                    onOpen={() => handleViewArtifact(artifact)}
+                    onTogglePin={() => handleToggleSave(artifact)}
+                  />
                 </div>
               ))}
             </div>
@@ -821,18 +971,24 @@ export default function WorkflowCockpit() {
           side="right"
         >
           <div className="p-4 space-y-6">
-            {/* Pinned artifacts */}
-            {pinnedArtifacts.length > 0 && (
+            {/* Saved artifacts */}
+            {savedArtifacts.length > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <Pin className="w-3.5 h-3.5 text-primary" />
                   <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Pinned
+                    Saved
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {pinnedArtifacts.map((artifact) => (
-                    <ArtifactCard key={artifact.id} artifact={artifact} compact />
+                  {savedArtifacts.map((artifact) => (
+                    <ArtifactCard 
+                      key={artifact.id} 
+                      artifact={artifact} 
+                      compact
+                      onOpen={() => handleViewArtifact(artifact)}
+                      onTogglePin={() => handleToggleSave(artifact)}
+                    />
                   ))}
                 </div>
               </div>
@@ -845,7 +1001,13 @@ export default function WorkflowCockpit() {
               </span>
               <div className="space-y-2 mt-3">
                 {artifacts.filter(a => !a.pinned).map((artifact) => (
-                  <ArtifactCard key={artifact.id} artifact={artifact} compact />
+                  <ArtifactCard 
+                    key={artifact.id} 
+                    artifact={artifact} 
+                    compact
+                    onOpen={() => handleViewArtifact(artifact)}
+                    onTogglePin={() => handleToggleSave(artifact)}
+                  />
                 ))}
               </div>
             </div>
@@ -1134,7 +1296,49 @@ export default function WorkflowCockpit() {
             </div>
           )}
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 flex-col sm:flex-row">
+            {currentPhase === 1 && completionData?.artifacts && (
+              <div className="flex gap-2 mr-auto">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (activeTab === 'genre_tropes' && completionData.artifacts.genre_tropes) {
+                      handleSaveOutput('genre_tropes', 'Genre Tropes', completionData.artifacts.genre_tropes);
+                    } else if (activeTab === 'style_sheet' && completionData.artifacts.style_sheet) {
+                      handleSaveOutput('style_sheet', 'Style Sheet', completionData.artifacts.style_sheet);
+                    } else if (activeTab === 'context_bundle' && completionData.artifacts.context_bundle) {
+                      handleSaveOutput('context_bundle', 'Context Bundle', completionData.artifacts.context_bundle);
+                    }
+                  }}
+                >
+                  <Pin className="w-4 h-4 mr-2" />
+                  Save {activeTab === 'genre_tropes' ? 'Genre Tropes' : activeTab === 'style_sheet' ? 'Style Sheet' : 'Context Bundle'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (completionData.artifacts.genre_tropes) {
+                      handleSaveOutput('genre_tropes', 'Genre Tropes', completionData.artifacts.genre_tropes);
+                    }
+                    if (completionData.artifacts.style_sheet) {
+                      handleSaveOutput('style_sheet', 'Style Sheet', completionData.artifacts.style_sheet);
+                    }
+                    if (completionData.artifacts.context_bundle) {
+                      handleSaveOutput('context_bundle', 'Context Bundle', completionData.artifacts.context_bundle);
+                    }
+                    toast({
+                      title: 'All outputs saved',
+                      description: 'All Phase 1 artifacts have been saved to context.',
+                    });
+                  }}
+                >
+                  <Pin className="w-4 h-4 mr-2" />
+                  Save All
+                </Button>
+              </div>
+            )}
             <Button variant="outline" onClick={() => setIsCompletionDialogOpen(false)}>
               Close
             </Button>
@@ -1161,6 +1365,66 @@ export default function WorkflowCockpit() {
                 Continue to Phase {currentPhase + 1} <ChevronRight className="w-4 h-4 ml-2" />
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Artifact Viewing Dialog */}
+      <Dialog open={isArtifactViewOpen} onOpenChange={setIsArtifactViewOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl flex items-center gap-3">
+              {viewingArtifact?.name}
+              {viewingArtifact?.pinned && (
+                <Badge variant="outline" className="text-xs">
+                  <Pin className="w-3 h-3 mr-1" />
+                  Pinned
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Review and manage this artifact
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="flex-1 h-[500px]">
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
+                {viewingArtifact?.content || 'No content available'}
+              </pre>
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (viewingArtifact) {
+                  handleToggleSave(viewingArtifact);
+                }
+              }}
+            >
+              <Pin className="w-4 h-4 mr-2" />
+              {viewingArtifact?.pinned ? 'Remove from Context' : 'Save to Context'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (viewingArtifact?.content) {
+                  navigator.clipboard.writeText(viewingArtifact.content);
+                  toast({
+                    title: 'Copied to clipboard',
+                    description: 'Artifact content has been copied.',
+                  });
+                }
+              }}
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              Copy Content
+            </Button>
+            <Button onClick={() => setIsArtifactViewOpen(false)}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
