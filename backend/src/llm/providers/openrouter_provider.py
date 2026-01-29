@@ -51,6 +51,8 @@ class OpenRouterProvider:
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
+                    "HTTP-Referer": "https://novel-weaver-studio.app",
+                    "X-Title": "Novel Weaver Studio",
                 },
                 json={
                     "model": model,

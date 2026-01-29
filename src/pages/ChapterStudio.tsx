@@ -87,6 +87,21 @@ export default function ChapterStudio() {
     updatedAt: new Date(art.updatedAt)
   }));
 
+  // Early return if no chapters available
+  if (!selectedChapter) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="text-center">
+            <BookOpen className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <h2 className="text-xl font-semibold mb-2">No Chapters Available</h2>
+            <p className="text-muted-foreground">Complete Phase 5 to generate your chapter outline first.</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
   // Mock content
   const chapterContent = {
     sceneBrief: selectedChapter.sceneBrief === 'completed'

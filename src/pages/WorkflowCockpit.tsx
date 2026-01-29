@@ -89,6 +89,11 @@ export default function WorkflowCockpit() {
   const [isContextOpen, toggleContextOpen] = usePanelState('cockpit-context', true);
   const [isOutputModalOpen, setIsOutputModalOpen] = useState(false);
   const [isPhase1InputOpen, setIsPhase1InputOpen] = useState(false);
+  const [isPhase6InputOpen, setIsPhase6InputOpen] = useState(false);
+  const [phase6FormData, setPhase6FormData] = useState({
+    chapter_number: '1',
+    chapter_title: ''
+  });
   const [isConfirmRunOpen, setIsConfirmRunOpen] = useState(false);
   const [phaseToRun, setPhaseToRun] = useState<number | null>(null);
   const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false);
@@ -145,7 +150,23 @@ export default function WorkflowCockpit() {
 
     if (currentPending && !isReviewDialogOpen) {
       console.log('Opening review dialog for pending input:', currentPending);
-      setReviewContent(currentPending.currentContent || currentPending.prompt || '');
+      
+      // Try to parse and format the content nicely
+      let formattedContent = currentPending.currentContent || currentPending.prompt || '';
+      
+      // If content looks like JSON, try to extract the actual content
+      try {
+        const parsed = JSON.parse(formattedContent);
+        // If it's an object with common content fields, extract them
+        if (parsed.series_outline) formattedContent = parsed.series_outline;
+        else if (parsed.content) formattedContent = parsed.content;
+        else if (parsed.result) formattedContent = parsed.result;
+        else if (parsed.output) formattedContent = parsed.output;
+      } catch (e) {
+        // Not JSON, use as-is
+      }
+      
+      setReviewContent(formattedContent);
       setReviewDescription(currentPending.prompt || 'Please review and provide your decision.');
       setIsReviewDialogOpen(true);
     }
@@ -474,6 +495,9 @@ export default function WorkflowCockpit() {
     // For Phase 1, show input dialog directly
     if (currentPhase === 1) {
       setIsPhase1InputOpen(true);
+    } else if (currentPhase === 6) {
+      // For Phase 6, show chapter input dialog
+      setIsPhase6InputOpen(true);
     } else {
       // For other phases, show confirmation
       setPhaseToRun(currentPhase);
@@ -506,6 +530,11 @@ export default function WorkflowCockpit() {
         inputs.writing_samples = phase1FormData.writing_samples;
         inputs.outline_template = phase1FormData.outline_template;
         inputs.prohibited_words = phase1FormData.prohibited_words;
+      }
+      // For Phase 6, use chapter inputs
+      else if (phaseNum === 6) {
+        inputs.chapter_number = phase6FormData.chapter_number;
+        inputs.chapter_title = phase6FormData.chapter_title;
       }
       // For Phase 2+, check if previous phase has outputs
       else if (phaseNum > 1) {
@@ -714,6 +743,32 @@ export default function WorkflowCockpit() {
     // Close input dialog and show confirmation
     setIsPhase1InputOpen(false);
     setPhaseToRun(1);
+    setIsConfirmRunOpen(true);
+  };
+
+  const handlePhase6InputSubmit = async () => {
+    if (!projectId) {
+      toast({
+        title: 'Error',
+        description: 'No project selected',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate required fields
+    if (!phase6FormData.chapter_title) {
+      toast({
+        title: 'Error',
+        description: 'Please provide a chapter title',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Close input dialog and show confirmation
+    setIsPhase6InputOpen(false);
+    setPhaseToRun(6);
     setIsConfirmRunOpen(true);
   };
 
@@ -1237,6 +1292,57 @@ export default function WorkflowCockpit() {
         </DialogContent>
       </Dialog>
 
+      {/* Phase 6 Input Dialog */}
+      <Dialog open={isPhase6InputOpen} onOpenChange={setIsPhase6InputOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">Phase 6: Chapter Writing</DialogTitle>
+            <DialogDescription>
+              Provide the chapter details to generate scene brief, draft, and final version.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="chapter_number">Chapter Number *</Label>
+              <Input
+                id="chapter_number"
+                type="number"
+                min="1"
+                placeholder="Enter chapter number (e.g., 1)"
+                value={phase6FormData.chapter_number}
+                onChange={(e) => setPhase6FormData({ ...phase6FormData, chapter_number: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="chapter_title">Chapter Title *</Label>
+              <Input
+                id="chapter_title"
+                placeholder="Enter the chapter title"
+                value={phase6FormData.chapter_title}
+                onChange={(e) => setPhase6FormData({ ...phase6FormData, chapter_title: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-border mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setIsPhase6InputOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handlePhase6InputSubmit}
+              disabled={!phase6FormData.chapter_title}
+            >
+              Submit Inputs
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Review Dialog */}
       <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
@@ -1247,11 +1353,13 @@ export default function WorkflowCockpit() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            <div className="bg-muted p-4 rounded-lg">
-              <pre className="whitespace-pre-wrap font-mono text-sm">{reviewContent}</pre>
+          <ScrollArea className="max-h-[50vh]">
+            <div className="prose prose-sm dark:prose-invert max-w-none p-4">
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <pre className="whitespace-pre-wrap text-sm leading-relaxed">{reviewContent}</pre>
+              </div>
             </div>
-          </div>
+          </ScrollArea>
 
           <DialogFooter className="gap-2">
             <Button
@@ -1319,33 +1427,62 @@ export default function WorkflowCockpit() {
                   </div>
                 </div>
               ) : (
-                /* Other phases: Show all outputs */
+                /* Other phases: Parse and show outputs */
                 <div className="p-4 space-y-4">
-                  {completionData?.result && (
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">Result</h4>
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
-                          {completionData.result}
-                        </pre>
+                  {(() => {
+                    // Try to parse completion data if it's a string
+                    let parsedData = completionData;
+                    if (typeof completionData === 'string') {
+                      try {
+                        parsedData = JSON.parse(completionData);
+                      } catch (e) {
+                        parsedData = { content: completionData };
+                      }
+                    }
+
+                    // Extract the actual content from various possible fields
+                    const extractContent = (data: unknown): { title: string; content: string } | null => {
+                      if (!data || typeof data !== 'object') return null;
+                      const obj = data as Record<string, unknown>;
+                      
+                      // Phase 2: series_outline
+                      if (typeof obj.series_outline === 'string') return { title: 'Series Outline', content: obj.series_outline };
+                      // Phase 3: call_sheet
+                      if (typeof obj.call_sheet === 'string') return { title: 'Call Sheet', content: obj.call_sheet };
+                      // Phase 4: character_profiles or worldbuilding
+                      if (typeof obj.character_profiles === 'string') return { title: 'Character Profiles', content: obj.character_profiles };
+                      if (typeof obj.worldbuilding === 'string') return { title: 'Worldbuilding', content: obj.worldbuilding };
+                      // Phase 5: chapter_outline
+                      if (typeof obj.chapter_outline === 'string') return { title: 'Chapter Outline', content: obj.chapter_outline };
+                      // Generic fields
+                      if (typeof obj.result === 'string') return { title: 'Result', content: obj.result };
+                      if (typeof obj.output === 'string') return { title: 'Output', content: obj.output };
+                      if (typeof obj.content === 'string') return { title: 'Content', content: obj.content };
+                      return null;
+                    };
+
+                    const extracted = extractContent(parsedData);
+
+                    if (extracted) {
+                      return (
+                        <div>
+                          <h4 className="text-sm font-medium mb-2">{extracted.title}</h4>
+                          <div className="prose prose-sm dark:prose-invert max-w-none">
+                            <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg leading-relaxed">
+                              {extracted.content}
+                            </pre>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Fallback: show raw JSON
+                    return (
+                      <div className="p-4 bg-muted rounded-md text-sm whitespace-pre-wrap font-mono">
+                        {JSON.stringify(parsedData || {}, null, 2)}
                       </div>
-                    </div>
-                  )}
-                  {completionData?.output && (
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">Output</h4>
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
-                          {completionData.output}
-                        </pre>
-                      </div>
-                    </div>
-                  )}
-                  {!completionData?.result && !completionData?.output && (
-                    <div className="p-4 bg-muted rounded-md text-sm whitespace-pre-wrap font-mono">
-                      {JSON.stringify(completionData || {}, null, 2)}
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
             </ScrollArea>
@@ -1382,13 +1519,53 @@ export default function WorkflowCockpit() {
                   </>
                 )}
                 {/* Phase 2-7: Save result/output */}
-                {currentPhase !== 1 && (completionData.result || completionData.output) && (
+                {currentPhase !== 1 && completionData && (
                   <Button variant="outline" size="sm"
                     onClick={() => {
-                      const content = completionData.result || completionData.output || '';
-                      const phaseInfo = getPhaseInfo(currentPhase);
-                      const outputName = phaseInfo.outputs[0] || `Phase ${currentPhase} Output`;
-                      handleSaveOutput(`phase_${currentPhase}_output`, outputName, content);
+                      // Parse and extract the actual content
+                      let parsedData: unknown = completionData;
+                      if (typeof completionData === 'string') {
+                        try {
+                          parsedData = JSON.parse(completionData);
+                        } catch (e) {
+                          parsedData = completionData;
+                        }
+                      }
+                      
+                      // Extract content based on phase
+                      let content = '';
+                      let outputName = `Phase ${currentPhase} Output`;
+                      
+                      if (parsedData && typeof parsedData === 'object') {
+                        const obj = parsedData as Record<string, unknown>;
+                        
+                        if (typeof obj.series_outline === 'string') {
+                          content = obj.series_outline;
+                          outputName = 'Series Outline';
+                        } else if (typeof obj.call_sheet === 'string') {
+                          content = obj.call_sheet;
+                          outputName = 'Call Sheet';
+                        } else if (typeof obj.character_profiles === 'string') {
+                          content = obj.character_profiles;
+                          outputName = 'Character Profiles';
+                        } else if (typeof obj.worldbuilding === 'string') {
+                          content = obj.worldbuilding;
+                          outputName = 'Worldbuilding';
+                        } else if (typeof obj.chapter_outline === 'string') {
+                          content = obj.chapter_outline;
+                          outputName = 'Chapter Outline';
+                        } else if (typeof obj.result === 'string') {
+                          content = obj.result;
+                        } else if (typeof obj.output === 'string') {
+                          content = obj.output;
+                        }
+                      } else if (typeof parsedData === 'string') {
+                        content = parsedData;
+                      }
+                      
+                      if (content) {
+                        handleSaveOutput(`phase_${currentPhase}_output`, outputName, content);
+                      }
                     }}>
                     <Pin className="w-4 h-4 mr-2" />
                     Save Output
