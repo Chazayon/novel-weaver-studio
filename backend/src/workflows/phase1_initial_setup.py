@@ -73,19 +73,7 @@ class Phase1InitialSetupWorkflow:
     async def provide_user_input(self, inputs: Dict[str, Any]) -> None:
         """Signal to provide user input for Phase 1."""
         self._user_input = inputs
-
-    @workflow.signal
-    async def user_review_signal(self, review: Dict[str, Any]) -> None:
-        """Signal to provide user review decision."""
-        approved = review.get("approved", False)
-        feedback = review.get("feedback", "")
-        
-        if approved:
-            self._context_approval = "APPROVE"
-        else:
-            self._context_approval = "REVISE"
-            self._revision_notes = feedback
-        workflow.logger.info(f"Received review signal: approved={approved}")
+        workflow.logger.info(f"Received user input signal with {len(inputs)} fields")
     
     @workflow.signal
     async def provide_context_approval(self, decision: str, notes: str = "") -> None:
@@ -375,12 +363,11 @@ Type **REVISE** if you want to make changes (you'll be asked for revision notes)
             )
             
             # Check decision
-            if self._context_approval and "APPROVE" in self._context_approval:
+            if "APPROVE" in self._context_approval:
                 workflow.logger.info("Context bundle approved")
-                self._current_status = "saving_artifacts"
                 break
             
-            if self._context_approval and "REVISE" in self._context_approval:
+            if "REVISE" in self._context_approval:
                 workflow.logger.info("Revision requested")
                 
                 # Wait for revision notes if not provided
