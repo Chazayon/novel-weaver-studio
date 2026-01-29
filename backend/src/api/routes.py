@@ -394,12 +394,67 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
         if workflow_id:
             try:
                 from ..workflows.client import get_temporal_client
+                from temporalio.client import WorkflowExecutionStatus
                 
                 client = await get_temporal_client()
                 handle = client.get_workflow_handle(workflow_id)
                 
+                # First check if workflow has completed by describing it
+                desc = await handle.describe()
+                
+                # Check for completion first
+                if desc.status == WorkflowExecutionStatus.COMPLETED:
+                    try:
+                        result = await handle.result()
+                        
+                        # For Phase 1, fetch the generated artifacts
+                        outputs = {"result": str(result)}
+                        if phase == 1:
+                            try:
+                                # Fetch Phase 1 artifacts
+                                genre_tropes = novel_vault.novel_read_text(project_id, "phase1_outputs/genre_tropes.md")
+                                style_sheet = novel_vault.novel_read_text(project_id, "phase1_outputs/style_sheet.md")
+                                context_bundle = novel_vault.novel_read_text(project_id, "phase1_outputs/context_bundle.md")
+                                
+                                outputs["artifacts"] = {
+                                    "genre_tropes": genre_tropes.get("text", ""),
+                                    "style_sheet": style_sheet.get("text", ""),
+                                    "context_bundle": context_bundle.get("text", "")
+                                }
+                                except Exception as e:
+                                    print(f"Warning: Could not fetch Phase 1 artifacts: {e}")
+                        
+                        return WorkflowStatus(
+                            workflowId=workflow_id,
+                            phase=phase,
+                            status=PhaseStatus.COMPLETED,
+                            progress=100.0,
+                            outputs=outputs,
+                        )
+                    except Exception as e:
+                        print(f"Error getting workflow result: {e}")
+                        # Still return completed status even if we can't get result
+                        return WorkflowStatus(
+                            workflowId=workflow_id,
+                            phase=phase,
+                            status=PhaseStatus.COMPLETED,
+                            progress=100.0,
+                            outputs={},
+                        )
+                
+                # Check for failed status
+                if desc.status == WorkflowExecutionStatus.FAILED:
+                    return WorkflowStatus(
+                        workflowId=workflow_id,
+                        phase=phase,
+                        status=PhaseStatus.FAILED,
+                        progress=0.0,
+                        outputs={},
+                        error="Workflow execution failed"
+                    )
+                
+                # Workflow is still running, try to get granular status via query
                 try:
-                    # Query for granular status
                     current_status = await handle.query("get_current_status")
                     outputs = {}
                     
@@ -433,22 +488,7 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                         outputs=outputs,
                     )
                 except Exception as e:
-                    # If query fails, check if execution is actually completed
-                    try:
-                        desc = await handle.describe()
-                        if desc.status == 3: # COMPLETED
-                            result = await handle.result()
-                            return WorkflowStatus(
-                                workflowId=workflow_id,
-                                phase=phase,
-                                status=PhaseStatus.COMPLETED,
-                                progress=100.0,
-                                outputs={"result": str(result)},
-                            )
-                    except:
-                        pass
-                        
-                    # Fallback if query fails or still running but query failed
+                    # Query failed but workflow is still running
                     return WorkflowStatus(
                         workflowId=workflow_id,
                         phase=phase,
@@ -456,7 +496,8 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                         progress=50.0,
                         outputs={},
                     )
-            except:
+            except Exception as e:
+                print(f"Error querying workflow status: {e}")
                 pass  # Fall through to manifest-based status
         
         # Fall back to manifest-based status

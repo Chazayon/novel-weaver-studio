@@ -80,6 +80,7 @@ export default function WorkflowCockpit() {
   const [workflowStartTimes, setWorkflowStartTimes] = useState<Record<number, number>>({});
   const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [activeTab, setActiveTab] = useState<'genre_tropes' | 'style_sheet' | 'context_bundle'>('genre_tropes');
 
   // Convert backend progress data to Phase format
   const phases: Phase[] = progressData?.phases.map(p => {
@@ -1043,32 +1044,123 @@ export default function WorkflowCockpit() {
 
       {/* Completion Dialog */}
       <Dialog open={isCompletionDialogOpen} onOpenChange={setIsCompletionDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>Phase {currentPhase} Completed!</DialogTitle>
+            <DialogTitle className="font-display text-2xl">
+              Phase {currentPhase} Completed! 🎉
+            </DialogTitle>
             <DialogDescription>
-              The workflow has successfully finished. Here are the generated results.
+              {currentPhase === 1
+                ? "Your novel foundation has been created. Review the outputs below."
+                : "The workflow has successfully finished. Here are the generated results."}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4 space-y-4">
-            <div className="p-4 bg-muted rounded-md text-sm whitespace-pre-wrap font-mono max-h-[400px] overflow-y-auto">
-              {completionData?.result || completionData?.output || JSON.stringify(completionData || {}, null, 2)}
-            </div>
-          </div>
+          {/* Phase 1 Artifacts Display */}
+          {currentPhase === 1 && completionData?.artifacts ? (
+            <div className="flex-1 overflow-hidden">
+              <div className="mb-3">
+                <p className="text-sm text-muted-foreground">
+                  Phase 1 has generated the following artifacts for your novel:
+                </p>
+              </div>
 
-          <DialogFooter>
+              <div className="border border-border rounded-lg overflow-hidden">
+                <div className="flex border-b border-border bg-muted/30">
+                  <button
+                    onClick={() => setActiveTab('genre_tropes')}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'genre_tropes'
+                      ? 'bg-background text-foreground border-b-2 border-primary'
+                      : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                  >
+                    Genre Tropes
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('style_sheet')}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'style_sheet'
+                      ? 'bg-background text-foreground border-b-2 border-primary'
+                      : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                  >
+                    Style Sheet
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('context_bundle')}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'context_bundle'
+                      ? 'bg-background text-foreground border-b-2 border-primary'
+                      : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                  >
+                    Context Bundle
+                  </button>
+                </div>
+
+                <ScrollArea className="h-[400px]">
+                  <div className="p-4">
+                    {activeTab === 'genre_tropes' && (
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
+                          {completionData.artifacts.genre_tropes || 'No content available'}
+                        </pre>
+                      </div>
+                    )}
+                    {activeTab === 'style_sheet' && (
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
+                          {completionData.artifacts.style_sheet || 'No content available'}
+                        </pre>
+                      </div>
+                    )}
+                    {activeTab === 'context_bundle' && (
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
+                          {completionData.artifacts.context_bundle || 'No content available'}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            </div>
+          ) : (
+            /* Generic completion data for other phases */
+            <div className="py-4 space-y-4 flex-1 overflow-hidden">
+              <ScrollArea className="h-[400px]">
+                <div className="p-4 bg-muted rounded-md text-sm whitespace-pre-wrap font-mono">
+                  {completionData?.result || completionData?.output || JSON.stringify(completionData || {}, null, 2)}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsCompletionDialogOpen(false)}>
               Close
             </Button>
-            <Button onClick={() => {
-              setIsCompletionDialogOpen(false);
-              if (currentPhase < 7) {
-                setCurrentPhase(currentPhase + 1);
-              }
-            }}>
-              Move to Next Phase <ChevronRight className="w-4 h-4 ml-2" />
-            </Button>
+            {currentPhase < 7 && (
+              <Button onClick={() => {
+                setIsCompletionDialogOpen(false);
+                // Move to next phase
+                const nextPhase = currentPhase + 1;
+                setCurrentPhase(nextPhase);
+
+                // Auto-start Phase 2 if completing Phase 1
+                if (currentPhase === 1) {
+                  toast({
+                    title: 'Moving to Phase 2',
+                    description: 'Ready to start brainstorming your series outline.',
+                  });
+                  // Give user a moment before potentially auto-starting
+                  setTimeout(() => {
+                    setPhaseToRun(2);
+                    setIsConfirmRunOpen(true);
+                  }, 1000);
+                }
+              }}>
+                Continue to Phase {currentPhase + 1} <ChevronRight className="w-4 h-4 ml-2" />
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
