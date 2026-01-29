@@ -69,8 +69,8 @@ class Phase4CharactersWorldbuildingWorkflow:
         characters = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                "default",
+                "default",
                 """You are an expert character developer who creates deep, compelling characters for fiction.""",
                 f"""<context_bundle>
 {context_bundle}
@@ -114,8 +114,8 @@ Output as Markdown with clear headings.""",
         worldbuilding = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                "default",
+                "default",
                 """You are an expert worldbuilding specialist who creates rich, immersive fictional worlds.""",
                 f"""<context_bundle>
 {context_bundle}
@@ -158,8 +158,8 @@ Output as Markdown with clear headings.""",
         updated_context_bundle = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                "default",
+                "default",
                 """You are a meticulous technical writer.
 You update the Context Bundle by inserting/overwriting CHARACTERS and WORLDBUILDING sections.""",
                 f"""Take the existing Context Bundle and update it:

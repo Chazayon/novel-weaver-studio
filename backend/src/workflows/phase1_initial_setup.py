@@ -223,8 +223,8 @@ Output only the style sheet in Markdown."""
         style_sheet = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-4o",
+                "default",
+                "default",
                 """You are an expert prose analyst.
 If the user provided `SKIP` for writing samples, create a default style sheet suitable for the genre.""",
                 style_sheet_task,
@@ -319,8 +319,8 @@ Output ONLY the Markdown Context Bundle."""
         context_bundle = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-4o",
+                "default",
+                "default",
                 """You are a meticulous technical writer.
 Your job is to compile all Phase 1 artifacts into a single, pasteable Context Bundle.""",
                 context_bundle_task,
@@ -411,8 +411,8 @@ Paste specific changes you want (bullets are best). The system will revise the c
                 context_bundle = await workflow.execute_activity(
                     llm_generate_activity,
                     args=[
-                        "openrouter",
-                        "openai/gpt-4o",
+                        "default",
+                        "default",
                         """You revise context bundles without losing good material.""",
                         f"""<current_context_bundle>
 {context_bundle}

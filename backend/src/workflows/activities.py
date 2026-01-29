@@ -8,6 +8,7 @@ from temporalio import activity
 
 from ..llm import get_provider_manager
 from ..vault import novel_vault
+from ..config import settings
 
 
 @activity.defn
@@ -31,17 +32,20 @@ async def llm_generate_activity(
         task: User task/prompt
         temperature: Sampling temperature
         max_tokens: Max tokens to generate
-        
     Returns:
         Generated text
     """
-    activity.logger.info(f"Generating with {provider}/{model}")
+    # Use system-wide defaults if "default" is passed or values are empty
+    effective_provider = provider if provider and provider != "default" else settings.default_llm_provider
+    effective_model = model if model and model != "default" else settings.default_llm_model
+    
+    activity.logger.info(f"Generating with {effective_provider}/{effective_model}")
     
     manager = get_provider_manager()
     
     result = await manager.generate(
-        provider=provider,
-        model=model,
+        provider=effective_provider,
+        model=effective_model,
         role=role,
         task=task,
         temperature=temperature,
@@ -145,8 +149,8 @@ Format your response in clean Markdown.""",
         activity.logger.warning(f"Perplexity search failed, falling back to regular LLM: {e}")
         # Fallback to regular LLM without web search
         result = await manager.generate(
-            provider="openrouter",
-            model="openai/gpt-4o",
+            provider=settings.default_llm_provider,
+            model=settings.default_llm_model,
             role="You are an expert literary analyst with deep knowledge of genre conventions.",
             task=query,
             temperature=0.3,

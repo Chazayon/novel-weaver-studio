@@ -93,8 +93,8 @@ class Phase2BrainstormingWorkflow:
         updated_context_bundle = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                "default",
+                "default",
                 """You are a meticulous technical writer.
 You update the Context Bundle by inserting/overwriting the SERIES_OUTLINE section.""",
                 f"""Take the existing Context Bundle and update it:
@@ -151,8 +151,8 @@ Return the full updated Context Bundle in Markdown.
         series_outline = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                "default",
+                "default",
                 """You are an expert creative writer and series outliner.
 You must stay consistent with the genre conventions inside the context bundle.""",
                 f"""<context_bundle>
@@ -241,8 +241,8 @@ Paste specific changes you want (bullets are best). The agent will revise the ou
                 series_outline = await workflow.execute_activity(
                     llm_generate_activity,
                     args=[
-                        "openrouter",
-                        "openai/gpt-5-nano",
+                        "default",
+                        "default",
                         """You revise outlines without losing good material.""",
                         f"""<context_bundle>
 {context_bundle}

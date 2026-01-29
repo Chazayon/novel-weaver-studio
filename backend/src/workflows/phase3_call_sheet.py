@@ -66,8 +66,8 @@ class Phase3CallSheetWorkflow:
         call_sheet = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                "default",
+                "default",
                 """You are an expert writing assistant who helps authors prepare comprehensive pre-writing materials.""",
                 f"""<context_bundle>
 {context_bundle}
@@ -109,8 +109,8 @@ Output in Markdown with clear headings:
         updated_context_bundle = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                "default",
+                "default",
                 """You are a meticulous technical writer.
 You update the Context Bundle by inserting/overwriting the CALL_SHEET section.""",
                 f"""Take the existing Context Bundle and update it:

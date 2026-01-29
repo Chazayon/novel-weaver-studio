@@ -1,0 +1,42 @@
+# Remote Docker Setup Walkthrough
+
+I have successfully configured your application to use the Docker services running on your remote computer (`192.168.178.26`).
+
+## Changes Made
+- Created a [.env](file:///Users/charlotteokeyo/Downloads/novel-weaver-studio/backend/.env) file in the `backend` directory.
+- Configured `TEMPORAL_HOST` to point to `192.168.178.26:7233`.
+
+### Centralized LLM Configuration
+The application now uses a centralized LLM configuration in [backend/.env](file:///Users/charlotteokeyo/Downloads/novel-weaver-studio/backend/.env). All workflow phases (1-7) have been updated to use the `default` keyword, which pulls the provider and model from your environmental settings.
+
+**Default LLM Settings:**
+- **Provider:** `openrouter`
+- **Model:** `google/gemini-2.0-flash-lite-preview-02-05`
+
+### Verification Results
+1.  **Remote Connection**: Confirmed connectivity to `192.168.178.26:7233`.
+2.  **Worker Start**: The Temporal worker successfully connects to the remote host.
+3.  **LLM Configuration**: The backend correctly reads API keys and default model settings from [.env](file:///Users/charlotteokeyo/Downloads/novel-weaver-studio/backend/.env).
+4.  **Workflow Flexibility**: All workflows are now model-agnostic and will follow your [.env](file:///Users/charlotteokeyo/Downloads/novel-weaver-studio/backend/.env) configuration.
+
+## Next Steps
+1.  **API Keys**: Open [backend/.env](file:///Users/charlotteokeyo/Downloads/novel-weaver-studio/backend/.env) and enter your actual API keys for OpenAI, Anthropic, Google, or OpenRouter.
+2.  **Restart**: Stop and restart the backend and worker:
+    - Backend: `uv run python -m src.main`
+    - Worker: `uv run python -m src.workflows.worker`
+
+## How to use
+You can now start your local backend and worker as usual. They will automatically connect to the remote Temporal instance.
+
+1. **Start Backend**:
+   ```bash
+   cd backend
+   uv run python -m src.main
+   ```
+2. **Start Worker**:
+   ```bash
+   cd backend
+   uv run python -m src.workflows.worker
+   ```
+
+You should see them connecting to `192.168.178.26:7233` in the logs.

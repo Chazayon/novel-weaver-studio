@@ -93,8 +93,8 @@ class Phase6SingleChapterWorkflow:
         scene_brief = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                    "default",
+                    "default",
                 """You are a scene planning expert who creates detailed, actionable scene briefs for fiction writing.""",
                 f"""<context_bundle>
 {context_bundle}
@@ -140,8 +140,8 @@ Output as Markdown only.""",
         first_draft = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                    "default",
+                    "default",
                 f"""You are an expert novelist.
 Follow the style sheet and avoid prohibited words.""",
                 f"""<context_bundle>
@@ -182,8 +182,8 @@ Output only the full chapter in Markdown with a heading:
         improvement_plan = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                    "default",
+                    "default",
                 """You are a developmental editor and line editor. You identify the highest-impact improvements.""",
                 f"""<context_bundle>
 {context_bundle}
@@ -239,8 +239,8 @@ Output as Markdown:
         updated_context_bundle = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                    "default",
+                    "default",
                 """You are a meticulous technical writer.
 You update the Context Bundle by storing the finished chapter for continuity.""",
                 f"""Update the Context Bundle as follows:
@@ -334,8 +334,8 @@ Return the FULL updated Context Bundle in Markdown.
             revised_draft = await workflow.execute_activity(
                 llm_generate_activity,
                 args=[
-                    "openrouter",
-                    "openai/gpt-5-nano",
+                    "default",
+                    "default",
                     """You are an expert reviser. Apply plans precisely while preserving voice.""",
                     f"""<context_bundle>
 {context_bundle}
@@ -411,8 +411,8 @@ Add your custom instructions (what to emphasize, what to ignore, tone shifts, et
             revised_draft = await workflow.execute_activity(
                 llm_generate_activity,
                 args=[
-                    "openrouter",
-                    "openai/gpt-5-nano",
+                    "default",
+                    "default",
                     """You are an expert reviser. Apply plans + custom notes precisely while preserving voice.""",
                     f"""<context_bundle>
 {context_bundle}
@@ -448,8 +448,8 @@ Output only the revised chapter in Markdown with the same heading.""",
         revised_draft = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                    "default",
+                    "default",
                 """You are an expert reviser. Apply plans precisely while preserving voice.""",
                 f"""<context_bundle>
 {context_bundle}
@@ -545,8 +545,8 @@ Paste your final revision notes (bullets are best). The agent will revise the FI
                 final_chapter = await workflow.execute_activity(
                     llm_generate_activity,
                     args=[
-                        "openrouter",
-                        "openai/gpt-5-nano",
+                    "default",
+                    "default",
                         """You perform a targeted revision without changing what doesn't need changing.""",
                         f"""<context_bundle>
 {context_bundle}

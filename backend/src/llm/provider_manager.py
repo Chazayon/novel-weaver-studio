@@ -77,6 +77,9 @@ class ProviderManager:
         if not provider:
             provider = settings.default_llm_provider
         
+        if not model:
+            model = settings.default_llm_model
+        
         if provider not in self.providers:
             available = self.get_available_providers()
             raise ValueError(

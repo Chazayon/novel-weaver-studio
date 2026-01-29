@@ -95,8 +95,8 @@ class Phase5ChapterOutlineWorkflow:
         updated_context_bundle = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                "default",
+                "default",
                 """You are a meticulous technical writer.
 You update the Context Bundle by inserting/overwriting the OUTLINE section.""",
                 f"""Take the existing Context Bundle and update it:
@@ -164,8 +164,8 @@ Return the full updated Context Bundle in Markdown.
         outline = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                "default",
+                "default",
                 """You are an expert outliner who creates detailed, compelling story outlines.""",
                 f"""<context_bundle>
 {context_bundle}
@@ -255,8 +255,8 @@ Paste which chapters need changes and what you want different (bullets are best)
                 outline = await workflow.execute_activity(
                     llm_generate_activity,
                     args=[
-                        "openrouter",
-                        "openai/gpt-5-nano",
+                        "default",
+                        "default",
                         """You revise outlines without losing good material.""",
                         f"""<context_bundle>
 {context_bundle}

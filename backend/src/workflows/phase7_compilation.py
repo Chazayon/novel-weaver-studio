@@ -66,8 +66,8 @@ class Phase7FinalCompilationWorkflow:
         final_manuscript = await workflow.execute_activity(
             llm_generate_activity,
             args=[
-                "openrouter",
-                "openai/gpt-5-nano",
+                "default",
+                "default",
                 """You are a manuscript compiler who creates clean, formatted final manuscripts.""",
                 f"""<context_bundle>
 {context_bundle}
