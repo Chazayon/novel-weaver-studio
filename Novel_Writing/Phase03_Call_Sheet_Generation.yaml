@@ -1,0 +1,140 @@
+version: 0.4.0
+
+# PHASE 3 (Improved UX)
+# - Input: Context Bundle (from Phase 2)
+# - Output: Updated Context Bundle including CALL_SHEET
+
+vars:
+  project_id: null  # Injected by API
+  context_bundle: null
+  call_sheet: null
+  updated_context_bundle: null
+
+graph:
+  id: phase3_call_sheet
+  description: "Phase 3: Generate the pre-writing call sheet with all necessary characters and worldbuilding elements. Works from a single Context Bundle."
+  is_majority_voting: false
+
+  start:
+    - auto_load_context
+
+  nodes:
+    - id: auto_load_context
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_read_text
+          result = novel_read_text(project_id, "phase1_outputs/context_bundle.md")
+          context_bundle = result.get("text", "")
+        outputs:
+          - context_bundle
+
+    - id: generate_call_sheet
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are an expert writing assistant who helps authors prepare comprehensive pre-writing materials.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          Create a pre-writing **CALL SHEET** that lists everything the author needs to fully flesh out:
+          - Characters (including minor ones with names)
+          - Worldbuilding elements (locations, objects, institutions, lore)
+          - Outline plan guidance (what we still need to decide before outlining)
+
+          Requirements:
+          - Make it actionable (checklist-like)
+          - Keep descriptions concise (1–2 sentences for characters; 1 sentence for worldbuilding items)
+
+          Output in Markdown with clear headings:
+          # CALL SHEET
+          ## Characters
+          ## Worldbuilding
+          ## Outline Plan
+        params:
+          temperature: 0.4
+          max_tokens: 6000
+        outputs:
+          - call_sheet
+
+    - id: save_call_sheet
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase3_outputs/call_sheet.md", call_sheet)
+        outputs: []
+
+    - id: update_context_bundle
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a meticulous technical writer.
+          You update the Context Bundle by inserting/overwriting the CALL_SHEET section.
+        task: |
+          Take the existing Context Bundle and update it:
+
+          - If it already contains a section named "CALL_SHEET", replace that entire section.
+          - Otherwise, append a new "CALL_SHEET" section near the end.
+
+          Return the full updated Context Bundle in Markdown.
+
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <call_sheet>
+          ${call_sheet}
+          </call_sheet>
+        params:
+          temperature: 0.1
+          max_tokens: 9000
+        outputs:
+          - updated_context_bundle
+
+    - id: save_updated_bundle
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase1_outputs/context_bundle.md", updated_context_bundle)
+        outputs: []
+
+    - id: phase3_complete
+      type: human
+      config:
+        description: |
+          ✅ **PHASE 3 COMPLETE!**
+
+          **Files automatically saved:**
+          - ✅ `phase3_outputs/call_sheet.md`
+          - ✅ `phase1_outputs/context_bundle.md` (updated)
+
+          **Next steps:**
+          Run Phase 4 via the Novel Studio API.
+
+  edges:
+    - from: auto_load_context
+      to: generate_call_sheet
+
+    - from: generate_call_sheet
+      to: save_call_sheet
+
+    - from: save_call_sheet
+      to: update_context_bundle
+
+    - from: update_context_bundle
+      to: save_updated_bundle
+
+    - from: save_updated_bundle
+      to: phase3_complete

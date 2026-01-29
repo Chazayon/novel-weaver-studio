@@ -1,0 +1,14 @@
+# Start Temporal UI Implementation Plan
+
+This plan outlines how to start the Temporal infrastructure and access the UI.
+
+## Proposed Changes
+
+No code changes are required. The instructions will guide the user on starting the existing Docker configuration.
+
+## Verification Plan
+
+### Manual Verification
+- Run `docker-compose up -d` from the project root.
+- Navigate to `http://localhost:8233` in the browser.
+- Confirm the Temporal UI is visible and connected to the server.

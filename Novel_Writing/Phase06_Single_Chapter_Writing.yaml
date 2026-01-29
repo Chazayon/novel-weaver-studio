@@ -1,0 +1,542 @@
+version: 0.4.0
+
+# PHASE 6 (Improved UX)
+# - Input: Context Bundle + a few chapter fields (instead of 10+ copy/pastes)
+# - Output: Final chapter + Updated Context Bundle that stores the finished chapter for continuity
+# - Branching:
+#   - After improvement plan: APPLY / CUSTOM / SKIP
+#   - Final review: APPROVE / REVISE (loop)
+
+vars:
+  project_id: null  # Injected by API
+  context_bundle: null
+  chapter_number: null
+  chapter_title: null
+  chapter_notes: null
+  previous_chapter_text: null
+  scene_brief: null
+  first_draft: null
+  improvement_plan: null
+  custom_notes: null
+  revised_draft: null
+  final_chapter: null
+  revision_notes: null
+  updated_context_bundle: null
+
+graph:
+  id: phase6_single_chapter
+  description: "Phase 6: Write one chapter at a time (Scene Brief → Draft → Optional Improvements → Final). Works from a single Context Bundle."
+  is_majority_voting: false
+
+  start:
+    - auto_load_context
+
+  nodes:
+    - id: auto_load_context
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_read_text
+          result = novel_read_text(project_id, "phase1_outputs/context_bundle.md")
+          context_bundle = result.get("text", "")
+          # chapter_number, chapter_title, chapter_notes are injected by API
+        outputs:
+          - context_bundle
+
+    - id: load_previous_chapter
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_get_previous_chapter_final
+          result = novel_get_previous_chapter_final(project_id, chapter_number)
+          previous_chapter_text = result.get("text", "NONE")
+        outputs:
+          - previous_chapter_text
+
+    - id: create_scene_brief
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a scene planning expert who creates detailed, actionable scene briefs for fiction writing.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <previous_chapter_text>
+          ${previous_chapter_text}
+          </previous_chapter_text>
+
+          <chapter_notes>
+          ${chapter_notes}
+          </chapter_notes>
+
+          Create a detailed scene brief for:
+
+          ## Chapter ${chapter_number}: ${chapter_title}
+
+          Requirements:
+          - Stay consistent with the OUTLINE, CHARACTERS, WORLDBUILDING, STYLE_SHEET and GENRE_TROPES in the bundle.
+          - If previous_chapter_text != NONE, include a short "continuity carryover" section.
+          - Include: POV, setting, time, scene goal, conflict, beats, emotional arc, and ending hook.
+          - Include a short "DO / DON'T" list from the style sheet and prohibited words.
+
+          Output as Markdown only.
+        params:
+          temperature: 0.6
+          max_tokens: 5000
+        outputs:
+          - scene_brief
+
+    - id: save_scene_brief
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          chapter_dir = f"phase6_outputs/chapter_{chapter_number}"
+          novel_write_text(project_id, f"{chapter_dir}/scene_brief.md", scene_brief)
+        outputs: []
+
+    - id: write_first_draft
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are an expert novelist.
+          Follow the style sheet and avoid prohibited words.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <scene_brief>
+          ${scene_brief}
+          </scene_brief>
+
+          Write Chapter ${chapter_number}: ${chapter_title} as complete prose.
+
+          Requirements:
+          - Respect the style sheet (voice, POV, tense, rhythm).
+          - Avoid prohibited words and AI-isms.
+          - Keep pacing tight: prioritize scene goal + conflict + escalation.
+          - End on the hook specified in the scene brief.
+
+          Output only the full chapter in Markdown with a heading:
+          ## Chapter ${chapter_number}: ${chapter_title}
+        params:
+          temperature: 0.75
+          max_tokens: 12000
+        outputs:
+          - first_draft
+
+    - id: save_first_draft
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          chapter_dir = f"phase6_outputs/chapter_{chapter_number}"
+          novel_write_text(project_id, f"{chapter_dir}/first_draft.md", first_draft)
+        outputs: []
+
+    - id: analyze_draft
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a developmental editor and line editor. You identify the highest-impact improvements.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <scene_brief>
+          ${scene_brief}
+          </scene_brief>
+
+          <first_draft>
+          ${first_draft}
+          </first_draft>
+
+          Create an improvement plan with:
+          1) Continuity issues (with prior chapter/outline)
+          2) Character voice issues
+          3) Pacing issues
+          4) Show-don't-tell upgrades (specific line-level suggestions)
+          5) Dialogue/subtext upgrades
+          6) Any prohibited word / AI-ism cleanup
+
+          Output as Markdown:
+          # IMPROVEMENT PLAN
+          - ...
+        params:
+          temperature: 0.3
+          max_tokens: 5000
+        outputs:
+          - improvement_plan
+
+    - id: choose_improvement_path
+      type: human
+      config:
+        description: |
+          Review the Improvement Plan.
+
+          Type:
+          - **APPLY** to implement it as-is
+          - **CUSTOM** to add your own instructions first
+          - **SKIP** to keep the first draft as final
+
+    - id: collect_custom_notes
+      type: human
+      config:
+        description: |
+          Add your custom instructions (what to emphasize, what to ignore, tone shifts, etc.).
+        outputs:
+          - custom_notes
+
+    - id: implement_improvements
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are an expert reviser. Apply plans precisely while preserving voice.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <improvement_plan>
+          ${improvement_plan}
+          </improvement_plan>
+
+          <draft>
+          ${first_draft}
+          </draft>
+
+          Revise the chapter by implementing the improvement plan.
+          Output only the revised chapter in Markdown with the same heading.
+        params:
+          temperature: 0.6
+          max_tokens: 12000
+        outputs:
+          - revised_draft
+
+    - id: implement_custom_improvements
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are an expert reviser. Apply plans + custom notes precisely while preserving voice.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <improvement_plan>
+          ${improvement_plan}
+          </improvement_plan>
+
+          <custom_notes>
+          ${custom_notes}
+          </custom_notes>
+
+          <draft>
+          ${first_draft}
+          </draft>
+
+          Revise the chapter by implementing the improvement plan AND the custom notes.
+          If they conflict, follow the custom notes.
+          Output only the revised chapter in Markdown with the same heading.
+        params:
+          temperature: 0.65
+          max_tokens: 12000
+        outputs:
+          - revised_draft
+
+    - id: keep_first_draft_as_final
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a deterministic copier.
+        task: |
+          Output EXACTLY the chapter text below, unchanged.
+
+          <draft>
+          ${first_draft}
+          </draft>
+        params:
+          temperature: 0.0
+          max_tokens: 12000
+        outputs:
+          - final_chapter
+
+    - id: set_revised_as_final
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a deterministic copier.
+        task: |
+          Output EXACTLY the revised chapter text below, unchanged.
+
+          <revised>
+          ${revised_draft}
+          </revised>
+        params:
+          temperature: 0.0
+          max_tokens: 12000
+        outputs:
+          - final_chapter
+
+    - id: final_review
+      type: human
+      config:
+        description: |
+          Review the FINAL chapter text.
+
+          Type **APPROVE** to lock it in, or type **REVISE** to provide notes and generate one more pass.
+
+    - id: collect_final_revision_notes
+      type: human
+      config:
+        description: |
+          Paste your final revision notes (bullets are best). The agent will revise the FINAL chapter accordingly.
+        outputs:
+          - revision_notes
+
+    - id: revise_final_chapter
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You perform a targeted revision without changing what doesn't need changing.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <final_chapter_current>
+          ${final_chapter}
+          </final_chapter_current>
+
+          <revision_notes>
+          ${revision_notes}
+          </revision_notes>
+
+          Revise the chapter to implement the revision notes. Preserve voice and continuity.
+          Output only the revised chapter in Markdown with the same heading.
+        params:
+          temperature: 0.55
+          max_tokens: 12000
+        outputs:
+          - final_chapter
+
+    - id: update_context_bundle
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a meticulous technical writer.
+          You update the Context Bundle by storing the finished chapter for continuity.
+        task: |
+          Update the Context Bundle as follows:
+
+          - Add or update a section named "DRAFTING_PROGRESS".
+          - Under it, store the latest finished chapter text.
+          - If an entry for this chapter already exists, replace it.
+
+          Preferred format inside DRAFTING_PROGRESS:
+          ## DRAFTING_PROGRESS
+          ### Chapter X
+          [full chapter text...]
+
+          Return the FULL updated Context Bundle in Markdown.
+
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <final_chapter>
+          ${final_chapter}
+          </final_chapter>
+        params:
+          temperature: 0.1
+          max_tokens: 14000
+        outputs:
+          - updated_context_bundle
+
+    - id: save_final_chapter
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          chapter_dir = f"phase6_outputs/chapter_{chapter_number}"
+          novel_write_text(project_id, f"{chapter_dir}/final.md", final_chapter)
+        outputs: []
+
+    - id: save_updated_bundle
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase1_outputs/context_bundle.md", updated_context_bundle)
+        outputs: []
+
+    - id: update_chapter_status
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_update_manifest
+          # Mark chapter as complete in project.json
+          patch = {
+              "state": {
+                  "current_chapter_number": chapter_number,
+                  "current_chapter_name": chapter_title
+              }
+          }
+          novel_update_manifest(project_id, patch)
+        outputs: []
+
+    - id: phase6_complete
+      type: human
+      config:
+        description: |
+          ✅ **CHAPTER COMPLETE!**
+
+          **Files automatically saved:**
+          - ✅ `phase6_outputs/chapter_{chapter_number}/scene_brief.md`
+          - ✅ `phase6_outputs/chapter_{chapter_number}/first_draft.md`
+          - ✅ `phase6_outputs/chapter_{chapter_number}/final.md`
+          - ✅ `phase1_outputs/context_bundle.md` (updated with chapter)
+          - ✅ `project.json` (chapter status updated)
+
+          **Next steps:**
+          Run Phase 6 again for the next chapter, or Phase 7 to compile the manuscript.
+
+  edges:
+    - from: auto_load_context
+      to: load_previous_chapter
+
+    - from: load_previous_chapter
+      to: create_scene_brief
+
+    - from: create_scene_brief
+      to: save_scene_brief
+
+    - from: save_scene_brief
+      to: write_first_draft
+
+    - from: write_first_draft
+      to: save_first_draft
+
+    - from: save_first_draft
+      to: analyze_draft
+
+    - from: analyze_draft
+      to: choose_improvement_path
+
+    - from: choose_improvement_path
+      to: implement_improvements
+      condition:
+        type: keyword
+        config:
+          any:
+            - APPLY
+          case_sensitive: false
+
+    - from: choose_improvement_path
+      to: collect_custom_notes
+      condition:
+        type: keyword
+        config:
+          any:
+            - CUSTOM
+          case_sensitive: false
+
+    - from: choose_improvement_path
+      to: keep_first_draft_as_final
+      condition:
+        type: keyword
+        config:
+          any:
+            - SKIP
+          case_sensitive: false
+
+    - from: collect_custom_notes
+      to: implement_custom_improvements
+
+    - from: implement_improvements
+      to: set_revised_as_final
+
+    - from: implement_custom_improvements
+      to: set_revised_as_final
+
+    - from: set_revised_as_final
+      to: final_review
+
+    - from: keep_first_draft_as_final
+      to: final_review
+
+    - from: final_review
+      to: update_context_bundle
+      condition:
+        type: keyword
+        config:
+          any:
+            - APPROVE
+          case_sensitive: false
+
+    - from: final_review
+      to: collect_final_revision_notes
+      condition:
+        type: keyword
+        config:
+          any:
+            - REVISE
+          case_sensitive: false
+
+    - from: collect_final_revision_notes
+      to: revise_final_chapter
+
+    - from: revise_final_chapter
+      to: final_review
+
+    - from: update_context_bundle
+      to: save_final_chapter
+
+    - from: save_final_chapter
+      to: save_updated_bundle
+
+    - from: save_updated_bundle
+      to: update_chapter_status
+
+    - from: update_chapter_status
+      to: phase6_complete

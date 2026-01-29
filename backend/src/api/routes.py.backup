@@ -1,0 +1,333 @@
+"""API routes for Novel Weaver Studio backend."""
+
+import uuid
+from datetime import datetime
+from typing import List
+
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import JSONResponse
+
+from ..models import (
+    ProjectCreate,
+    ProjectResponse,
+    ArtifactInfo,
+    ArtifactUpdateRequest,
+    PhaseExecuteRequest,
+    WorkflowStatus,
+    PhaseStatus,
+)
+from ..vault import storage_manager, novel_vault
+
+router = APIRouter(prefix="/api", tags=["api"])
+
+
+@router.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+
+# Project Management Endpoints
+
+@router.post("/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_project(project: ProjectCreate):
+    """Create a new novel project."""
+    try:
+        project_id = str(uuid.uuid4())
+        
+        metadata = project.model_dump()
+        result = storage_manager.create_project(project_id, metadata)
+        
+        manifest = result["manifest"]
+        
+        return ProjectResponse(
+            id=project_id,
+            title=metadata["title"],
+            author=metadata["author"],
+            genre=metadata["genre"],
+            seriesLength=metadata.get("series_length", 20),
+            createdAt=manifest["created_at"],
+            updatedAt=manifest["updated_at"],
+            currentPhase=manifest["state"]["current_phase"],
+            progress=0.0,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
+
+
+@router.get("/projects", response_model=List[ProjectResponse])
+async def list_projects():
+    """List all projects."""
+    try:
+        projects_data = storage_manager.list_all_projects()
+        
+        projects = []
+        for project_data in projects_data:
+            manifest = project_data["manifest"]
+            metadata = manifest.get("metadata", {})
+            state = manifest.get("state", {})
+            
+            # Calculate progress based on completed phases
+            phases_completed = len(state.get("phases_completed", []))
+            progress = (phases_completed / 7) * 100
+            
+            projects.append(
+                ProjectResponse(
+                    id=project_data["id"],
+                    title=metadata.get("title", "Untitled"),
+                    author=metadata.get("author", "Unknown"),
+                    genre=metadata.get("genre", "Unknown"),
+                    seriesLength=metadata.get("series_length", 20),
+                    createdAt=manifest.get("created_at", ""),
+                    updatedAt=manifest.get("updated_at", ""),
+                    currentPhase=state.get("current_phase", 1),
+                    progress=progress,
+                )
+            )
+        
+        return projects
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list projects: {str(e)}")
+
+
+@router.get("/projects/{project_id}", response_model=ProjectResponse)
+async def get_project(project_id: str):
+    """Get project details."""
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        metadata = manifest.get("metadata", {})
+        state = manifest.get("state", {})
+        
+        phases_completed = len(state.get("phases_completed", []))
+        progress = (phases_completed / 7) * 100
+        
+        return ProjectResponse(
+            id=project_id,
+            title=metadata.get("title", "Untitled"),
+            author=metadata.get("author", "Unknown"),
+            genre=metadata.get("genre", "Unknown"),
+            seriesLength=metadata.get("series_length", 20),
+            createdAt=manifest.get("created_at", ""),
+            updatedAt=manifest.get("updated_at", ""),
+            currentPhase=state.get("current_phase", 1),
+            progress=progress,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get project: {str(e)}")
+
+
+@router.delete("/projects/{project_id}")
+async def delete_project(project_id: str):
+    """Delete a project."""
+    try:
+        result = storage_manager.delete_project(project_id)
+        return result
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete project: {str(e)}")
+
+
+# Workflow Execution Endpoints
+
+@router.post("/projects/{project_id}/phases/{phase}/execute")
+async def execute_phase(project_id: str, phase: int, request: PhaseExecuteRequest):
+    """
+    Start executing a workflow phase using Temporal.
+    
+    Currently supports Phase 1. Other phases coming soon.
+    """
+    try:
+        # Verify project exists
+        storage_manager.get_project_manifest(project_id)
+        
+        # Import workflow client and Phase 1 workflow
+        from ..workflows.client import get_temporal_client
+        from ..workflows.phase1_initial_setup import Phase1InitialSetupWorkflow, Phase1Input
+        
+        client = await get_temporal_client()
+        
+        if phase == 1:
+            # Create Phase 1 input from request
+            workflow_input = Phase1Input(
+                project_id=project_id,
+                genre=request.inputs.get("genre"),
+                book_title=request.inputs.get("book_title"),
+                initial_ideas=request.inputs.get("initial_ideas"),
+                writing_samples=request.inputs.get("writing_samples"),
+                outline_template=request.inputs.get("outline_template"),
+                prohibited_words=request.inputs.get("prohibited_words"),
+            )
+            
+            # Start Phase 1 workflow
+            from ..config import settings
+            
+            workflow_id = f"phase1-{project_id}-{uuid.uuid4()}"
+            
+            handle = await client.start_workflow(
+                Phase1InitialSetupWorkflow.run,
+                workflow_input,
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+            )
+            
+            return WorkflowStatus(
+                workflowId=workflow_id,
+                phase=phase,
+                status=PhaseStatus.IN_PROGRESS,
+                progress=0.0,
+                currentStep="Starting Phase 1: Initial Setup & Research",
+                outputs={},
+            )
+        
+        elif phase == 2:
+            # Create Phase 2 input from request
+            from ..workflows.phase2_brainstorming import Phase2BrainstormingWorkflow, Phase2Input
+            
+            workflow_input = Phase2Input(
+                project_id=project_id,
+                extra_notes=request.inputs.get("extra_notes"),
+                auto_approve=request.inputs.get("auto_approve", False),
+            )
+            
+            # Start Phase 2 workflow
+            from ..config import settings
+            
+            workflow_id = f"phase2-{project_id}-{uuid.uuid4()}"
+            
+            handle = await client.start_workflow(
+                Phase2BrainstormingWorkflow.run,
+                workflow_input,
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+            )
+            
+            return WorkflowStatus(
+                workflowId=workflow_id,
+                phase=phase,
+                status=PhaseStatus.IN_PROGRESS,
+                progress=0.0,
+                currentStep="Starting Phase 2: Brainstorming & Series Outline",
+                outputs={},
+            )
+        
+        else:
+            # Phases 2-7 not implemented yet
+            return WorkflowStatus(
+                workflowId=f"placeholder-{project_id}-phase-{phase}",
+                phase=phase,
+                status=PhaseStatus.NOT_STARTED,
+                progress=0.0,
+                currentStep=f"Phase {phase} workflow not implemented yet",
+                outputs={},
+            )
+            
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to execute phase: {str(e)}")
+
+
+@router.get("/projects/{project_id}/phases/{phase}/status")
+async def get_phase_status(project_id: str, phase: int, workflow_id: str | None = None):
+    """Get the status of a workflow phase."""
+    try:
+        # If workflow_id provided, query Temporal for actual status
+        if workflow_id:
+            try:
+                from ..workflows.client import get_temporal_client
+                
+                client = await get_temporal_client()
+                handle = client.get_workflow_handle(workflow_id)
+                
+                # Try to get workflow status
+                try:
+                    result = await handle.result()
+                    return WorkflowStatus(
+                        workflowId=workflow_id,
+                        phase=phase,
+                        status=PhaseStatus.COMPLETED,
+                        progress=100.0,
+                        outputs={"result": str(result)},
+                    )
+                except:
+                    # Still running
+                    return WorkflowStatus(
+                        workflowId=workflow_id,
+                        phase=phase,
+                        status=PhaseStatus.IN_PROGRESS,
+                        progress=50.0,
+                        outputs={},
+                    )
+            except:
+                pass  # Fall through to manifest-based status
+        
+        # Fall back to manifest-based status
+        manifest = storage_manager.get_project_manifest(project_id)
+        state = manifest.get("state", {})
+        phases_completed = state.get("phases_completed", [])
+        
+        if phase in phases_completed:
+            phase_status = PhaseStatus.COMPLETED
+            progress = 100.0
+        elif phase == state.get("current_phase", 1):
+            phase_status = PhaseStatus.IN_PROGRESS
+            progress = 50.0
+        else:
+            phase_status = PhaseStatus.NOT_STARTED
+            progress = 0.0
+        
+        return WorkflowStatus(
+            workflowId=f"workflow-{project_id}-phase-{phase}",
+            phase=phase,
+            status=phase_status,
+            progress=progress,
+            outputs={},
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+
+# Artifact Management Endpoints
+
+@router.get("/projects/{project_id}/artifacts", response_model=List[ArtifactInfo])
+async def list_artifacts(project_id: str, phase: str = None):
+    """List all artifacts in a project."""
+    try:
+        artifacts = storage_manager.list_artifacts(project_id, phase)
+        return [ArtifactInfo(**artifact) for artifact in artifacts]
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list artifacts: {str(e)}")
+
+
+@router.get("/projects/{project_id}/artifacts/{artifact_path:path}")
+async def get_artifact(project_id: str, artifact_path: str):
+    """Get artifact content."""
+    try:
+        result = novel_vault.novel_read_text(project_id, artifact_path)
+        return {"content": result["text"], "path": artifact_path}
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Artifact {artifact_path} not found in project {project_id}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get artifact: {str(e)}")
+
+
+@router.put("/projects/{project_id}/artifacts/{artifact_path:path}")
+async def update_artifact(
+    project_id: str, artifact_path: str, request: ArtifactUpdateRequest
+):
+    """Update artifact content."""
+    try:
+        result = novel_vault.novel_write_text(project_id, artifact_path, request.content)
+        return {"success": True, "path": artifact_path, "bytes_written": result["bytes_written"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update artifact: {str(e)}")

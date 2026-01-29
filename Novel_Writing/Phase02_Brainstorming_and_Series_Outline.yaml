@@ -1,0 +1,220 @@
+version: 0.4.0
+
+# PHASE 2 (Improved UX)
+# - Input: Phase 1 Context Bundle
+# - Output: Updated Context Bundle including a Series Outline
+# - Branching: APPROVE -> continue, REVISE -> collect notes -> revise
+
+vars:
+  project_id: null  # Injected by API
+  context_bundle: null
+  extra_notes: null
+  series_outline: null
+  revision_notes: null
+  updated_context_bundle: null
+
+graph:
+  id: phase2_brainstorming
+  description: "Phase 2: Interactive brainstorming session to develop your complete series outline and story concept. Works from a single Context Bundle."
+  is_majority_voting: false
+
+  start:
+    - auto_load_context
+
+  nodes:
+    - id: auto_load_context
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_read_text
+          result = novel_read_text(project_id, "phase1_outputs/context_bundle.md")
+          context_bundle = result.get("text", "")
+          extra_notes = ""  # Can be overridden via API if needed
+        outputs:
+          - context_bundle
+          - extra_notes
+
+    - id: brainstorm_series
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are an expert creative writer and series outliner.
+          You must stay consistent with the genre conventions inside the context bundle.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <extra_notes>
+          ${extra_notes}
+          </extra_notes>
+
+          Create a comprehensive **Series Outline** that a writer can actually draft from.
+
+          Include:
+          - Core premise & hook
+          - Protagonist, antagonist, and key cast
+          - Main conflict + stakes
+          - Magic/setting rules (as relevant)
+          - Book/series arc (if series: book-by-book arcs; if standalone: arc + sequel hooks)
+          - Act/beat overview (high level, not chapter-by-chapter yet)
+
+          Output in clean Markdown with headings.
+        params:
+          temperature: 0.7
+          max_tokens: 8000
+        outputs:
+          - series_outline
+
+    - id: save_series_outline
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase2_outputs/series_outline.md", series_outline)
+        outputs: []
+
+    - id: review_series_outline
+      type: human
+      config:
+        description: |
+          Review the Series Outline above.
+
+          Type **APPROVE** to lock it in, or type **REVISE** and you’ll get a box to describe changes.
+
+    - id: collect_revision_notes
+      type: human
+      config:
+        description: |
+          Paste specific changes you want (bullets are best). Then the agent will revise the outline.
+        outputs:
+          - revision_notes
+
+    - id: revise_series_outline
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You revise outlines without losing good material.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <current_series_outline>
+          ${series_outline}
+          </current_series_outline>
+
+          <revision_notes>
+          ${revision_notes}
+          </revision_notes>
+
+          Revise the series outline to implement the revision notes.
+          Keep it internally consistent and genre-appropriate.
+
+          Output ONLY the revised Markdown outline.
+        params:
+          temperature: 0.5
+          max_tokens: 8000
+        outputs:
+          - series_outline
+
+    - id: update_context_bundle
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a meticulous technical writer.
+          You update the Context Bundle by inserting/overwriting the SERIES_OUTLINE section.
+        task: |
+          Take the existing Context Bundle and update it:
+
+          - If it already contains a section named "SERIES_OUTLINE", replace that entire section.
+          - Otherwise, append a new "SERIES_OUTLINE" section near the end.
+
+          Return the full updated Context Bundle in Markdown.
+
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <series_outline>
+          ${series_outline}
+          </series_outline>
+        params:
+          temperature: 0.1
+          max_tokens: 9000
+        outputs:
+          - updated_context_bundle
+
+    - id: save_updated_bundle
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          # Overwrite the context bundle with the updated version
+          novel_write_text(project_id, "phase1_outputs/context_bundle.md", updated_context_bundle)
+        outputs: []
+
+    - id: phase2_complete
+      type: human
+      config:
+        description: |
+          ✅ **PHASE 2 COMPLETE!**
+
+          **Files automatically saved:**
+          - ✅ `phase2_outputs/series_outline.md`
+          - ✅ `phase1_outputs/context_bundle.md` (updated with series outline)
+
+          **Next steps:**
+          Run Phase 3 via the Novel Studio API or continue to the next workflow phase.
+
+  edges:
+    - from: auto_load_context
+      to: brainstorm_series
+
+    - from: brainstorm_series
+      to: save_series_outline
+
+    - from: save_series_outline
+      to: review_series_outline
+
+    - from: review_series_outline
+      to: update_context_bundle
+      condition:
+        type: keyword
+        config:
+          any:
+            - APPROVE
+          case_sensitive: false
+
+    - from: review_series_outline
+      to: collect_revision_notes
+      condition:
+        type: keyword
+        config:
+          any:
+            - REVISE
+          case_sensitive: false
+
+    - from: collect_revision_notes
+      to: revise_series_outline
+
+    - from: revise_series_outline
+      to: review_series_outline
+
+    - from: update_context_bundle
+      to: save_updated_bundle
+
+    - from: save_updated_bundle
+      to: phase2_complete

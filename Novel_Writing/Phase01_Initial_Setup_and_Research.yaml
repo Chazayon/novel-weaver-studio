@@ -1,0 +1,217 @@
+version: 0.4.0
+
+# PHASE 1 (Improved UX)
+# - Produces a single pasteable "CONTEXT BUNDLE" (Markdown) so later phases require fewer inputs.
+# - Uses a linear DAG to reduce UI confusion.
+
+vars:
+  project_id: null  # Injected by API
+  genre: null
+  book_title: null
+  initial_ideas: null
+  writing_samples: null
+  outline_template: null
+  prohibited_words: null
+  genre_tropes: null
+  style_sheet: null
+  context_bundle: null
+
+graph:
+  id: phase1_initial_setup
+  description: "Phase 1: Collect initial information and conduct genre research. Outputs a single reusable Context Bundle for later phases."
+  is_majority_voting: false
+
+  start:
+    - collect_initial_input
+
+  nodes:
+    - id: collect_initial_input
+      type: human
+      config:
+        description: |
+          **PHASE 1: INITIAL SETUP & RESEARCH (v2)**
+
+          Goal: create a *Context Bundle* you can paste into every later phase.
+
+          Please provide:
+
+          1) **Genre** (e.g., Fantasy Romance, Thriller)
+          2) **Book Title**
+          3) **Initial Ideas** (premise, characters, vibes, anything you have)
+
+          Optional:
+          4) **Writing Samples** (~3k–6k words). If none, type `SKIP`.
+          5) **Outline Template** (your preferred structure). If none, type `SKIP`.
+          6) **Prohibited Words** (AI-isms/clichés you want to avoid). If none, type `SKIP`.
+
+          Tip: If you type `SKIP`, the workflow will create sensible defaults.
+        outputs:
+          - genre
+          - book_title
+          - initial_ideas
+          - writing_samples
+          - outline_template
+          - prohibited_words
+
+    - id: research_genre_tropes
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are an expert literary analyst specializing in genre conventions and tropes.
+          Your output must be directly usable as a reference document during drafting.
+        task: |
+          Conduct deep research on the tropes and conventions of the **${genre}** genre.
+
+          Provide a comprehensive list that includes:
+          1. Core Tropes (most expected)
+          2. Character Archetypes
+          3. Plot Structures
+          4. Setting Conventions
+          5. Themes
+          6. Reader Expectations
+          7. Subgenre Variations (if applicable)
+
+          Format as a clean Markdown reference.
+        params:
+          temperature: 0.3
+          max_tokens: 5000
+        outputs:
+          - genre_tropes
+
+    - id: save_genre_tropes
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase1_outputs/genre_tropes.md", genre_tropes)
+        outputs: []
+
+    - id: generate_style_sheet
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are an expert prose analyst.
+          If the user provided `SKIP` for writing samples, create a default style sheet suitable for ${genre}.
+        task: |
+          <writing_samples>
+          ${writing_samples}
+          </writing_samples>
+
+          Draft a prose style sheet that an LLM can follow to write consistently.
+
+          Requirements:
+          - Emphasize deep POV and show-don't-tell (with examples).
+          - Specify POV + tense conventions.
+          - Dialogue style guidance.
+          - Typical sentence/paragraph rhythm.
+          - Approximate grade level.
+
+          If writing_samples == `SKIP`, write a default style sheet appropriate for ${genre}.
+
+          Output only the style sheet in Markdown.
+        params:
+          temperature: 0.2
+          max_tokens: 4000
+        outputs:
+          - style_sheet
+
+    - id: save_style_sheet
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase1_outputs/style_sheet.md", style_sheet)
+        outputs: []
+
+    - id: assemble_context_bundle
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a meticulous technical writer.
+          Your job is to compile all Phase 1 artifacts into a single, pasteable Context Bundle.
+        task: |
+          Build a single Markdown document called **CONTEXT BUNDLE v1**.
+
+          It must include these sections, in this order:
+          1) META (genre, book_title)
+          2) INITIAL_IDEAS
+          3) PROHIBITED_WORDS (empty list if SKIP)
+          4) OUTLINE_TEMPLATE (if SKIP, include "DEFAULT" and a short default template)
+          5) GENRE_TROPES (paste in full)
+          6) STYLE_SHEET (paste in full)
+
+          Constraints:
+          - Make it easy to reuse: include clear headings and delimiter lines.
+          - Keep everything in one document (no links).
+
+          Inputs:
+          <genre>${genre}</genre>
+          <book_title>${book_title}</book_title>
+          <initial_ideas>${initial_ideas}</initial_ideas>
+          <prohibited_words>${prohibited_words}</prohibited_words>
+          <outline_template>${outline_template}</outline_template>
+          <genre_tropes>${genre_tropes}</genre_tropes>
+          <style_sheet>${style_sheet}</style_sheet>
+
+          Output ONLY the Markdown Context Bundle.
+        params:
+          temperature: 0.1
+          max_tokens: 7000
+        outputs:
+          - context_bundle
+
+    - id: save_context_bundle
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase1_outputs/context_bundle.md", context_bundle)
+        outputs: []
+
+    - id: phase1_complete
+      type: human
+      config:
+        description: |
+          ✅ **PHASE 1 COMPLETE!**
+
+          **Files automatically saved:**
+          - ✅ `phase1_outputs/genre_tropes.md`
+          - ✅ `phase1_outputs/style_sheet.md`
+          - ✅ `phase1_outputs/context_bundle.md`
+
+          **Next steps:**
+          Run Phase 2 via the Novel Studio API or continue to the next workflow phase.
+
+  edges:
+    - from: collect_initial_input
+      to: research_genre_tropes
+
+    - from: research_genre_tropes
+      to: save_genre_tropes
+
+    - from: save_genre_tropes
+      to: generate_style_sheet
+
+    - from: generate_style_sheet
+      to: save_style_sheet
+
+    - from: save_style_sheet
+      to: assemble_context_bundle
+
+    - from: assemble_context_bundle
+      to: save_context_bundle
+
+    - from: save_context_bundle
+      to: phase1_complete

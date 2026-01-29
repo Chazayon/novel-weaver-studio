@@ -1,10 +1,10 @@
 import { Artifact } from '@/lib/mockData';
 import { cn } from '@/lib/utils';
-import { 
-  FileText, 
-  Users, 
-  Globe, 
-  Palette, 
+import {
+  FileText,
+  Users,
+  Globe,
+  Palette,
   BookOpen,
   Pin,
   Copy,
@@ -83,7 +83,9 @@ export function ArtifactCard({ artifact, compact, onOpen, onCopy, onTogglePin }:
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Updated {formatDistanceToNow(artifact.updatedAt, { addSuffix: true })}
+            {artifact.updatedAt && !isNaN(new Date(artifact.updatedAt).getTime())
+              ? `Updated ${formatDistanceToNow(new Date(artifact.updatedAt), { addSuffix: true })}`
+              : 'Recently updated'}
           </p>
         </div>
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChapterRow } from '@/components/shared/ChapterRow';
 import { EditorTabs } from '@/components/shared/EditorTabs';
@@ -9,19 +10,20 @@ import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { usePanelState } from '@/hooks/usePanelState';
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
 } from '@/components/ui/select';
-import { mockChapters, mockArtifacts, Chapter } from '@/lib/mockData';
-import { 
-  Play, 
-  Zap, 
-  FileText, 
-  Sparkles, 
+import { useChapters, useChapter, useArtifacts } from '@/api/hooks';
+import { Chapter } from '@/lib/mockData';
+import {
+  Play,
+  Zap,
+  FileText,
+  Sparkles,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -41,18 +43,53 @@ const tones = [
 ];
 
 export default function ChapterStudio() {
-  const [chapters] = useState(mockChapters);
-  const [artifacts] = useState(mockArtifacts);
-  const [selectedChapter, setSelectedChapter] = useState<Chapter>(chapters[4]);
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get('projectId');
+
+  // API hooks
+  const { data: chaptersData, isLoading: chaptersLoading } = useChapters(projectId || undefined);
+  const { data: artifactsData } = useArtifacts(projectId || undefined);
+
+  const [selectedChapterNumber, setSelectedChapterNumber] = useState(1);
+  const { data: selectedChapterData } = useChapter(projectId || undefined, selectedChapterNumber);
+
   const [targetWordCount, setTargetWordCount] = useState([3000]);
   const [selectedTone, setSelectedTone] = useState('neutral');
   const [isRunning, setIsRunning] = useState(false);
   const [isChaptersOpen, toggleChaptersOpen] = usePanelState('chapter-studio-chapters', true);
   const [isControlsOpen, toggleControlsOpen] = usePanelState('chapter-studio-controls', true);
 
+  // Convert backend chapter data to frontend format
+  const chapters: Chapter[] = (chaptersData || []).map(ch => ({
+    id: ch.number.toString(),
+    number: ch.number,
+    title: ch.title,
+    wordCount: ch.wordCount || 0,
+    sceneBrief: ch.hasSceneBrief ? 'completed' : 'not-started',
+    draft: ch.hasFirstDraft ? 'completed' : 'not-started',
+    improvePlan: 'not-started' as const,
+    final: ch.hasFinal ? 'completed' : 'not-started'
+  }));
+
+  const selectedChapter = chapters.find(c => c.number === selectedChapterNumber) || chapters[0];
+
+  // Convert artifact data
+  const artifacts = (artifactsData || []).map(art => ({
+    id: art.name,
+    name: art.name,
+    path: art.path,
+    type: 'other' as const,
+    phase: 'Phase 1',
+    size: `${Math.round(art.size / 1024)}KB`,
+    lastModified: new Date(art.updatedAt).toLocaleString(),
+    pinned: false,
+    content: '', // Content loaded on demand
+    updatedAt: new Date(art.updatedAt)
+  }));
+
   // Mock content
   const chapterContent = {
-    sceneBrief: selectedChapter.sceneBrief === 'completed' 
+    sceneBrief: selectedChapter.sceneBrief === 'completed'
       ? `# Scene Brief: ${selectedChapter.title}\n\n## Setting\nThe chapter opens in the great hall of Castle Thornwood, where torchlight flickers against ancient stone walls. The air is thick with tension...\n\n## Key Beats\n1. Elena discovers the hidden message\n2. Confrontation with the council\n3. The unexpected alliance offer\n\n## Emotional Arc\nAnxiety → Determination → Hope`
       : '',
     draft: selectedChapter.draft === 'completed' || selectedChapter.draft === 'in-progress'
@@ -100,8 +137,8 @@ export default function ChapterStudio() {
                 key={chapter.id}
                 chapter={chapter}
                 isActive={selectedChapter.id === chapter.id}
-                onClick={() => setSelectedChapter(chapter)}
-                onContinue={() => setSelectedChapter(chapter)}
+                onClick={() => setSelectedChapterNumber(chapter.number)}
+                onContinue={() => setSelectedChapterNumber(chapter.number)}
               />
             ))}
           </div>
@@ -113,27 +150,27 @@ export default function ChapterStudio() {
           <div className="p-3 lg:p-4 border-b border-border flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 lg:gap-4 min-w-0">
               <div className="flex items-center gap-1">
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => {
-                    const idx = chapters.findIndex(c => c.id === selectedChapter.id);
-                    if (idx > 0) setSelectedChapter(chapters[idx - 1]);
+                    const idx = chapters.findIndex(c => c.id === selectedChapter?.id);
+                    if (idx > 0) setSelectedChapterNumber(chapters[idx - 1].number);
                   }}
-                  disabled={chapters[0].id === selectedChapter.id}
+                  disabled={!chapters.length || chapters[0]?.id === selectedChapter?.id}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => {
-                    const idx = chapters.findIndex(c => c.id === selectedChapter.id);
-                    if (idx < chapters.length - 1) setSelectedChapter(chapters[idx + 1]);
+                    const idx = chapters.findIndex(c => c.id === selectedChapter?.id);
+                    if (idx < chapters.length - 1) setSelectedChapterNumber(chapters[idx + 1].number);
                   }}
-                  disabled={chapters[chapters.length - 1].id === selectedChapter.id}
+                  disabled={!chapters.length || chapters[chapters.length - 1]?.id === selectedChapter?.id}
                 >
                   <ChevronRight className="w-4 h-4" />
                 </Button>
@@ -209,7 +246,7 @@ export default function ChapterStudio() {
               <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">
                 Generation Settings
               </Label>
-              
+
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -248,8 +285,8 @@ export default function ChapterStudio() {
 
             {/* Run buttons */}
             <div className="space-y-2 pt-4 border-t border-border">
-              <Button 
-                className="w-full justify-start" 
+              <Button
+                className="w-full justify-start"
                 variant="outline"
                 onClick={() => handleRunStep('scene-brief')}
                 disabled={isRunning || selectedChapter.sceneBrief === 'completed'}
@@ -260,9 +297,9 @@ export default function ChapterStudio() {
                   <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
                 )}
               </Button>
-              
-              <Button 
-                className="w-full justify-start" 
+
+              <Button
+                className="w-full justify-start"
                 variant="outline"
                 onClick={() => handleRunStep('draft')}
                 disabled={isRunning || selectedChapter.sceneBrief !== 'completed'}
@@ -273,9 +310,9 @@ export default function ChapterStudio() {
                   <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
                 )}
               </Button>
-              
-              <Button 
-                className="w-full justify-start" 
+
+              <Button
+                className="w-full justify-start"
                 variant="outline"
                 onClick={() => handleRunStep('improve')}
                 disabled={isRunning || selectedChapter.draft !== 'completed'}
@@ -286,9 +323,9 @@ export default function ChapterStudio() {
                   <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
                 )}
               </Button>
-              
-              <Button 
-                className="w-full justify-start" 
+
+              <Button
+                className="w-full justify-start"
                 variant="outline"
                 onClick={() => handleRunStep('final')}
                 disabled={isRunning || selectedChapter.improvePlan !== 'completed'}
@@ -301,8 +338,8 @@ export default function ChapterStudio() {
               </Button>
 
               <div className="pt-2">
-                <Button 
-                  className="w-full" 
+                <Button
+                  className="w-full"
                   size="lg"
                   onClick={() => handleRunStep('full')}
                   disabled={isRunning || selectedChapter.final === 'completed'}

@@ -1,0 +1,234 @@
+version: 0.4.0
+
+# PHASE 5 (Improved UX)
+# - Input: Context Bundle
+# - Output: Updated Context Bundle including OUTLINE
+# - Branching: APPROVE -> update bundle, REVISE -> collect notes -> revise
+
+vars:
+  project_id: null  # Injected by API
+  context_bundle: null
+  outline_template: null
+  outline: null
+  revision_notes: null
+  updated_context_bundle: null
+
+graph:
+  id: phase5_chapter_outline
+  description: "Phase 5: Generate the complete chapter-by-chapter outline for your novel. Works from a single Context Bundle."
+  is_majority_voting: false
+
+  start:
+    - auto_load_context
+
+  nodes:
+    - id: auto_load_context
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_read_text
+          result = novel_read_text(project_id, "phase1_outputs/context_bundle.md")
+          context_bundle = result.get("text", "")
+          outline_template = "USE_BUNDLE"  # Can be overridden via API if needed
+        outputs:
+          - context_bundle
+          - outline_template
+
+    - id: create_chapter_outline
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are an expert outliner who creates detailed, compelling story outlines.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <outline_template_override>
+          ${outline_template}
+          </outline_template_override>
+
+          Generate a fully fleshed out chapter-by-chapter outline.
+
+          Rules:
+          - Use the outline template override if provided (unless it's USE_BUNDLE).
+          - If override is SKIP, use a sensible default for the genre.
+          - Each chapter summary should be specific (200–250 words), like a handoff to a ghostwriter.
+          - Keep the outline consistent with characters, worldbuilding, and genre conventions from the bundle.
+
+          Output as Markdown:
+          ## OUTLINE
+          ### Chapter 1: Title
+          [200–250 words...]
+          ...
+        params:
+          temperature: 0.6
+          max_tokens: 9000
+        outputs:
+          - outline
+
+    - id: save_outline
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase5_outputs/outline.md", outline)
+        outputs: []
+
+    - id: review_outline
+      type: human
+      config:
+        description: |
+          Review the outline above.
+
+          Type **APPROVE** to lock it in, or type **REVISE** and you’ll get a box to describe changes.
+
+    - id: collect_revision_notes
+      type: human
+      config:
+        description: |
+          Paste which chapters need changes and what you want different (bullets are best).
+        outputs:
+          - revision_notes
+
+    - id: revise_outline
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You revise outlines without losing good material.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <current_outline>
+          ${outline}
+          </current_outline>
+
+          <revision_notes>
+          ${revision_notes}
+          </revision_notes>
+
+          Revise the outline to implement the revision notes.
+          Keep it internally consistent and genre-appropriate.
+
+          Output ONLY the revised Markdown outline.
+        params:
+          temperature: 0.5
+          max_tokens: 9000
+        outputs:
+          - outline
+
+    - id: update_context_bundle
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a meticulous technical writer.
+          You update the Context Bundle by inserting/overwriting the OUTLINE section.
+        task: |
+          Take the existing Context Bundle and update it:
+
+          - If it already contains a section named "OUTLINE", replace that entire section.
+          - Otherwise, append a new "OUTLINE" section near the end.
+
+          Return the full updated Context Bundle in Markdown.
+
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <outline>
+          ${outline}
+          </outline>
+        params:
+          temperature: 0.1
+          max_tokens: 12000
+        outputs:
+          - updated_context_bundle
+
+    - id: save_updated_bundle
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase1_outputs/context_bundle.md", updated_context_bundle)
+        outputs: []
+
+    - id: parse_outline_to_chapters
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_parse_outline
+          # Parse outline and update manifest with chapter list
+          result = novel_parse_outline(project_id)
+          # This updates project.json with chapters array
+        outputs: []
+
+    - id: phase5_complete
+      type: human
+      config:
+        description: |
+          ✅ **PHASE 5 COMPLETE!**
+
+          **Files automatically saved:**
+          - ✅ `phase5_outputs/outline.md`
+          - ✅ `phase1_outputs/context_bundle.md` (updated)
+          - ✅ `project.json` (chapters parsed and added)
+
+          **Next steps:**
+          Run Phase 6 for each chapter via the Novel Studio API.
+
+  edges:
+    - from: auto_load_context
+      to: create_chapter_outline
+
+    - from: create_chapter_outline
+      to: save_outline
+
+    - from: save_outline
+      to: review_outline
+
+    - from: review_outline
+      to: update_context_bundle
+      condition:
+        type: keyword
+        config:
+          any:
+            - APPROVE
+          case_sensitive: false
+
+    - from: review_outline
+      to: collect_revision_notes
+      condition:
+        type: keyword
+        config:
+          any:
+            - REVISE
+          case_sensitive: false
+
+    - from: collect_revision_notes
+      to: revise_outline
+
+    - from: revise_outline
+      to: review_outline
+
+    - from: update_context_bundle
+      to: save_updated_bundle
+
+    - from: save_updated_bundle
+      to: parse_outline_to_chapters
+
+    - from: parse_outline_to_chapters
+      to: phase5_complete

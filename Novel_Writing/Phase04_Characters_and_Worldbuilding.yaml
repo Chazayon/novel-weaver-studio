@@ -1,0 +1,198 @@
+version: 0.4.0
+
+# PHASE 4 (Improved UX)
+# - Input: Context Bundle
+# - Output: Updated Context Bundle including CHARACTERS and WORLDBUILDING
+# - Uses a linear flow for predictable UI and reliable bundling.
+
+vars:
+  project_id: null  # Injected by API
+  context_bundle: null
+  characters: null
+  worldbuilding: null
+  updated_context_bundle: null
+
+graph:
+  id: phase4_characters_worldbuilding
+  description: "Phase 4: Develop detailed character profiles and comprehensive worldbuilding elements. Works from a single Context Bundle."
+  is_majority_voting: false
+
+  start:
+    - auto_load_context
+
+  nodes:
+    - id: auto_load_context
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_read_text
+          result = novel_read_text(project_id, "phase1_outputs/context_bundle.md")
+          context_bundle = result.get("text", "")
+        outputs:
+          - context_bundle
+
+    - id: develop_characters
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are an expert character developer who creates deep, compelling characters for fiction.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          Create a fleshed-out character document.
+
+          For each MAJOR character include:
+          1) Physical description
+          2) Role in story
+          3) Personality profiles (MBTI, Enneagram, CliftonStrengths)
+          4) Core motivation
+          5) Background (pre-story)
+          6) Quirk/hobby
+          7) Dialogue style
+          8) 4 short dialogue examples (relaxed, stressed, thoughtful, excited)
+
+          For MINOR characters:
+          - 1–2 sentences each (background + desire + plot relationship)
+
+          Output as Markdown with clear headings.
+        params:
+          temperature: 0.5
+          max_tokens: 7000
+        outputs:
+          - characters
+
+    - id: save_characters
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase4_outputs/characters.md", characters)
+        outputs: []
+
+    - id: build_worldbuilding
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are an expert worldbuilding specialist who creates rich, immersive fictional worlds.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          Create a worldbuilding guide organized into relevant categories (only use categories that apply).
+
+          Example categories (use as needed):
+          - High-level Worldbuilding
+          - Locations
+          - Magic/Tech
+          - Politics/Institutions
+          - Culture
+          - History/Lore
+          - Religion/Beliefs
+          - Factions/Groups
+
+          For each element, write 3–5 sentences with specific usable details.
+
+          Output as Markdown with clear headings.
+        params:
+          temperature: 0.5
+          max_tokens: 8000
+        outputs:
+          - worldbuilding
+
+    - id: save_worldbuilding
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase4_outputs/worldbuilding.md", worldbuilding)
+        outputs: []
+
+    - id: update_context_bundle
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a meticulous technical writer.
+          You update the Context Bundle by inserting/overwriting CHARACTERS and WORLDBUILDING sections.
+        task: |
+          Take the existing Context Bundle and update it:
+
+          - Replace or append a section named "CHARACTERS" with the full characters output.
+          - Replace or append a section named "WORLDBUILDING" with the full worldbuilding output.
+
+          Return the full updated Context Bundle in Markdown.
+
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          <characters>
+          ${characters}
+          </characters>
+
+          <worldbuilding>
+          ${worldbuilding}
+          </worldbuilding>
+        params:
+          temperature: 0.1
+          max_tokens: 12000
+        outputs:
+          - updated_context_bundle
+
+    - id: save_updated_bundle
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "phase1_outputs/context_bundle.md", updated_context_bundle)
+        outputs: []
+
+    - id: phase4_complete
+      type: human
+      config:
+        description: |
+          ✅ **PHASE 4 COMPLETE!**
+
+          **Files automatically saved:**
+          - ✅ `phase4_outputs/characters.md`
+          - ✅ `phase4_outputs/worldbuilding.md`
+          - ✅ `phase1_outputs/context_bundle.md` (updated)
+
+          **Next steps:**
+          Run Phase 5 via the Novel Studio API.
+
+  edges:
+    - from: auto_load_context
+      to: develop_characters
+
+    - from: develop_characters
+      to: save_characters
+
+    - from: save_characters
+      to: build_worldbuilding
+
+    - from: build_worldbuilding
+      to: save_worldbuilding
+
+    - from: save_worldbuilding
+      to: update_context_bundle
+
+    - from: update_context_bundle
+      to: save_updated_bundle
+
+    - from: save_updated_bundle
+      to: phase4_complete

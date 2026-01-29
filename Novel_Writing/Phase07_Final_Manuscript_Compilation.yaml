@@ -1,0 +1,99 @@
+version: 0.4.0
+
+# PHASE 7 (Improved UX)
+# - Input: Context Bundle (which should include DRAFTING_PROGRESS chapters) + Author name
+# - Output: Final manuscript in Markdown
+
+vars:
+  project_id: null  # Injected by API
+  context_bundle: null
+  author_name: null
+  final_manuscript: null
+
+graph:
+  id: phase7_final_compilation
+  description: "Phase 7: Compile all completed chapters into a final, publication-ready manuscript. Works from a single Context Bundle."
+  is_majority_voting: false
+
+  start:
+    - auto_load_context
+
+  nodes:
+    - id: auto_load_context
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_read_text
+          result = novel_read_text(project_id, "phase1_outputs/context_bundle.md")
+          context_bundle = result.get("text", "")
+          # author_name is injected by API from project.json
+        outputs:
+          - context_bundle
+
+    - id: compile_manuscript
+      type: agent
+      config:
+        base_url: ${BASE_URL}
+        provider: gemini
+        api_key: ${API_KEY}
+        name: gemini-2.5-pro
+        role: |
+          You are a manuscript compiler who creates clean, formatted final manuscripts.
+        task: |
+          <context_bundle>
+          ${context_bundle}
+          </context_bundle>
+
+          Compile a final, publication-ready manuscript in Markdown.
+
+          Requirements:
+          1) Title Page (title, "by", author)
+          2) Copyright Page (standard fiction disclaimer)
+          3) Table of Contents (chapters + titles)
+          4) Manuscript body:
+             - Chapters in correct order
+             - Consistent formatting
+             - Use `---` between chapters as a page-break marker
+
+          Source of truth:
+          - Use the book title and genre from the META section of the Context Bundle (if present).
+          - Use chapters from the DRAFTING_PROGRESS section.
+          - If a chapter is missing, note it in a short "Missing Chapters" section before the manuscript body.
+
+          Author name: ${author_name}
+
+          Output ONLY the final manuscript Markdown.
+        params:
+          temperature: 0.2
+          max_tokens: 16000
+        outputs:
+          - final_manuscript
+
+    - id: save_final_manuscript
+      type: python
+      config:
+        code: |
+          from functions.function_calling.novel_vault import novel_write_text
+          novel_write_text(project_id, "exports/FINAL_MANUSCRIPT.md", final_manuscript)
+        outputs: []
+
+    - id: workflow_complete
+      type: human
+      config:
+        description: |
+          ✅✅✅ **CONGRATULATIONS! YOUR NOVEL IS COMPLETE!** ✅✅✅
+
+          **Files automatically saved:**
+          - ✅ `exports/FINAL_MANUSCRIPT.md`
+
+          Your complete novel is ready for publication!
+
+  edges:
+    - from: auto_load_context
+      to: compile_manuscript
+
+    - from: compile_manuscript
+      to: save_final_manuscript
+
+    - from: save_final_manuscript
+      to: workflow_complete
