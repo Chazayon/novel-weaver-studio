@@ -1218,130 +1218,120 @@ export default function WorkflowCockpit() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Phase 1 Artifacts Display */}
-          {currentPhase === 1 && completionData?.artifacts ? (
-            <div className="flex-1 overflow-hidden">
-              <div className="mb-3">
-                <p className="text-sm text-muted-foreground">
-                  Phase 1 has generated the following artifacts for your novel:
-                </p>
-              </div>
-
-              <div className="border border-border rounded-lg overflow-hidden">
-                <div className="flex border-b border-border bg-muted/30">
-                  <button
-                    onClick={() => setActiveTab('genre_tropes')}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'genre_tropes'
-                      ? 'bg-background text-foreground border-b-2 border-primary'
-                      : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                  >
-                    Genre Tropes
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('style_sheet')}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'style_sheet'
-                      ? 'bg-background text-foreground border-b-2 border-primary'
-                      : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                  >
-                    Style Sheet
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('context_bundle')}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'context_bundle'
-                      ? 'bg-background text-foreground border-b-2 border-primary'
-                      : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                  >
-                    Context Bundle
-                  </button>
-                </div>
-
-                <ScrollArea className="h-[400px]">
-                  <div className="p-4">
-                    {activeTab === 'genre_tropes' && (
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
-                          {completionData.artifacts.genre_tropes || 'No content available'}
-                        </pre>
-                      </div>
-                    )}
-                    {activeTab === 'style_sheet' && (
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
-                          {completionData.artifacts.style_sheet || 'No content available'}
-                        </pre>
-                      </div>
-                    )}
-                    {activeTab === 'context_bundle' && (
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
-                          {completionData.artifacts.context_bundle || 'No content available'}
-                        </pre>
-                      </div>
-                    )}
+          <div className="py-4 space-y-4 flex-1 overflow-hidden">
+            <ScrollArea className="h-[400px]">
+              {currentPhase === 1 && completionData?.artifacts ? (
+                /* Phase 1: Tabbed artifacts */
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <div className="flex border-b border-border bg-muted/30">
+                    <button
+                      onClick={() => setActiveTab('genre_tropes')}
+                      className={`px-4 py-2 text-sm font-medium transition-colors ${
+                        activeTab === 'genre_tropes' ? 'bg-background text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                      Genre Tropes
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('style_sheet')}
+                      className={`px-4 py-2 text-sm font-medium transition-colors ${
+                        activeTab === 'style_sheet' ? 'bg-background text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                      Style Sheet
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('context_bundle')}
+                      className={`px-4 py-2 text-sm font-medium transition-colors ${
+                        activeTab === 'context_bundle' ? 'bg-background text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                      Context Bundle
+                    </button>
                   </div>
-                </ScrollArea>
-              </div>
-            </div>
-          ) : (
-            /* Generic completion data for other phases */
-            <div className="py-4 space-y-4 flex-1 overflow-hidden">
-              <ScrollArea className="h-[400px]">
-                <div className="p-4 bg-muted rounded-md text-sm whitespace-pre-wrap font-mono">
-                  {completionData?.result || completionData?.output || JSON.stringify(completionData || {}, null, 2)}
+                  <div className="p-4">
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
+                        {activeTab === 'genre_tropes' && (completionData.artifacts.genre_tropes || 'No content available')}
+                        {activeTab === 'style_sheet' && (completionData.artifacts.style_sheet || 'No content available')}
+                        {activeTab === 'context_bundle' && (completionData.artifacts.context_bundle || 'No content available')}
+                      </pre>
+                    </div>
+                  </div>
                 </div>
-              </ScrollArea>
-            </div>
-          )}
+              ) : (
+                /* Other phases: Show all outputs */
+                <div className="p-4 space-y-4">
+                  {completionData?.result && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">Result</h4>
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
+                          {completionData.result}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                  {completionData?.output && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">Output</h4>
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg font-mono">
+                          {completionData.output}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                  {!completionData?.result && !completionData?.output && (
+                    <div className="p-4 bg-muted rounded-md text-sm whitespace-pre-wrap font-mono">
+                      {JSON.stringify(completionData || {}, null, 2)}
+                    </div>
+                  )}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
 
           <DialogFooter className="gap-2 flex-col sm:flex-row">
-            {currentPhase === 1 && completionData?.artifacts && (
-              <div className="flex gap-2 mr-auto">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (activeTab === 'genre_tropes' && completionData.artifacts.genre_tropes) {
-                      handleSaveOutput('genre_tropes', 'Genre Tropes', completionData.artifacts.genre_tropes);
-                    } else if (activeTab === 'style_sheet' && completionData.artifacts.style_sheet) {
-                      handleSaveOutput('style_sheet', 'Style Sheet', completionData.artifacts.style_sheet);
-                    } else if (activeTab === 'context_bundle' && completionData.artifacts.context_bundle) {
-                      handleSaveOutput('context_bundle', 'Context Bundle', completionData.artifacts.context_bundle);
-                    }
-                  }}
-                >
-                  <Pin className="w-4 h-4 mr-2" />
-                  Save {activeTab === 'genre_tropes' ? 'Genre Tropes' : activeTab === 'style_sheet' ? 'Style Sheet' : 'Context Bundle'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (completionData.artifacts.genre_tropes) {
-                      handleSaveOutput('genre_tropes', 'Genre Tropes', completionData.artifacts.genre_tropes);
-                    }
-                    if (completionData.artifacts.style_sheet) {
-                      handleSaveOutput('style_sheet', 'Style Sheet', completionData.artifacts.style_sheet);
-                    }
-                    if (completionData.artifacts.context_bundle) {
-                      handleSaveOutput('context_bundle', 'Context Bundle', completionData.artifacts.context_bundle);
-                    }
-                    toast({
-                      title: 'All outputs saved',
-                      description: 'All Phase 1 artifacts have been saved to context.',
-                    });
-                  }}
-                >
-                  <Pin className="w-4 h-4 mr-2" />
-                  Save All
-                </Button>
+            {completionData && (
+              <div className="flex gap-2 mr-auto flex-wrap">
+                {/* Phase 1: Save individual or all artifacts */}
+                {currentPhase === 1 && completionData.artifacts && (
+                  <>
+                    <Button variant="outline" size="sm"
+                      onClick={() => {
+                        if (activeTab === 'genre_tropes' && completionData.artifacts.genre_tropes) {
+                          handleSaveOutput('genre_tropes', 'Genre Tropes', completionData.artifacts.genre_tropes);
+                        } else if (activeTab === 'style_sheet' && completionData.artifacts.style_sheet) {
+                          handleSaveOutput('style_sheet', 'Style Sheet', completionData.artifacts.style_sheet);
+                        } else if (activeTab === 'context_bundle' && completionData.artifacts.context_bundle) {
+                          handleSaveOutput('context_bundle', 'Context Bundle', completionData.artifacts.context_bundle);
+                        }
+                      }}>
+                      <Pin className="w-4 h-4 mr-2" />
+                      Save {activeTab === 'genre_tropes' ? 'Genre Tropes' : activeTab === 'style_sheet' ? 'Style Sheet' : 'Context Bundle'}
+                    </Button>
+                    <Button variant="outline" size="sm"
+                      onClick={() => {
+                        if (completionData.artifacts.genre_tropes) handleSaveOutput('genre_tropes', 'Genre Tropes', completionData.artifacts.genre_tropes);
+                        if (completionData.artifacts.style_sheet) handleSaveOutput('style_sheet', 'Style Sheet', completionData.artifacts.style_sheet);
+                        if (completionData.artifacts.context_bundle) handleSaveOutput('context_bundle', 'Context Bundle', completionData.artifacts.context_bundle);
+                        toast({ title: 'All outputs saved', description: 'All Phase 1 artifacts have been saved to context.' });
+                      }}>
+                      <Pin className="w-4 h-4 mr-2" />Save All
+                    </Button>
+                  </>
+                )}
+                {/* Phase 2-7: Save result/output */}
+                {currentPhase !== 1 && (completionData.result || completionData.output) && (
+                  <Button variant="outline" size="sm"
+                    onClick={() => {
+                      const content = completionData.result || completionData.output || '';
+                      const phaseInfo = getPhaseInfo(currentPhase);
+                      const outputName = phaseInfo.outputs[0] || `Phase ${currentPhase} Output`;
+                      handleSaveOutput(`phase_${currentPhase}_output`, outputName, content);
+                    }}>
+                    <Pin className="w-4 h-4 mr-2" />
+                    Save Output
+                  </Button>
+                )}
               </div>
             )}
-            <Button variant="outline" onClick={() => setIsCompletionDialogOpen(false)}>
-              Close
-            </Button>
+            <Button variant="outline" onClick={() => setIsCompletionDialogOpen(false)}>Close</Button>
             {currentPhase < 7 && (
               <Button onClick={() => {
                 setIsCompletionDialogOpen(false);
