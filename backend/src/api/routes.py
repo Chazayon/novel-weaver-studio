@@ -421,8 +421,8 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                                     "style_sheet": style_sheet.get("text", ""),
                                     "context_bundle": context_bundle.get("text", "")
                                 }
-                                except Exception as e:
-                                    print(f"Warning: Could not fetch Phase 1 artifacts: {e}")
+                            except Exception as e:
+                                print(f"Warning: Could not fetch Phase 1 artifacts: {e}")
                         
                         return WorkflowStatus(
                             workflowId=workflow_id,
