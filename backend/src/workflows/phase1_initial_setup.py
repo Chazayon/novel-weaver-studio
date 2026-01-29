@@ -73,6 +73,18 @@ class Phase1InitialSetupWorkflow:
     async def provide_user_input(self, inputs: Dict[str, Any]) -> None:
         """Signal to provide user input for Phase 1."""
         self._user_input = inputs
+
+    @workflow.signal
+    async def user_review_signal(self, review: Dict[str, Any]) -> None:
+        """Signal to provide user review decision."""
+        approved = review.get("approved", False)
+        feedback = review.get("feedback", "")
+        
+        if approved:
+            self._context_approval = "APPROVE"
+        else:
+            self._context_approval = "REVISE"
+            self._revision_notes = feedback
         workflow.logger.info(f"Received user input signal with {len(inputs)} fields")
     
     @workflow.signal
@@ -431,4 +443,3 @@ Output ONLY the revised Markdown context bundle.""",
             break
         
         return context_bundle
-
