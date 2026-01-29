@@ -1,0 +1,963 @@
+"""API routes for Novel Weaver Studio backend."""
+
+import uuid
+from datetime import datetime
+from typing import List
+
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import JSONResponse
+
+from ..models import (
+    ProjectCreate,
+    ProjectResponse,
+    ArtifactInfo,
+    ArtifactUpdateRequest,
+    PhaseExecuteRequest,
+    WorkflowStatus,
+    PhaseStatus,
+    WorkflowSignal,
+    HumanInputResponse,
+    PendingInput,
+    ChapterDetail,
+    ChapterUpdate,
+    PhaseProgress,
+    ProjectProgress,
+    TimelineEvent,
+    SystemStats,
+)
+from ..vault import storage_manager, novel_vault
+
+router = APIRouter(prefix="/api", tags=["api"])
+
+
+@router.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+
+# Project Management Endpoints
+
+@router.post("/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_project(project: ProjectCreate):
+    """Create a new novel project."""
+    try:
+        project_id = str(uuid.uuid4())
+        
+        metadata = project.model_dump()
+        result = storage_manager.create_project(project_id, metadata)
+        
+        manifest = result["manifest"]
+        
+        return ProjectResponse(
+            id=project_id,
+            title=metadata["title"],
+            author=metadata["author"],
+            genre=metadata["genre"],
+            seriesLength=metadata.get("series_length", 20),
+            createdAt=manifest["created_at"],
+            updatedAt=manifest["updated_at"],
+            currentPhase=manifest["state"]["current_phase"],
+            progress=0.0,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
+
+
+@router.get("/projects", response_model=List[ProjectResponse])
+async def list_projects():
+    """List all projects."""
+    try:
+        projects_data = storage_manager.list_all_projects()
+        
+        projects = []
+        for project_data in projects_data:
+            manifest = project_data["manifest"]
+            metadata = manifest.get("metadata", {})
+            state = manifest.get("state", {})
+            
+            # Calculate progress based on completed phases
+            phases_completed = len(state.get("phases_completed", []))
+            progress = (phases_completed / 7) * 100
+            
+            projects.append(
+                ProjectResponse(
+                    id=project_data["id"],
+                    title=metadata.get("title", "Untitled"),
+                    author=metadata.get("author", "Unknown"),
+                    genre=metadata.get("genre", "Unknown"),
+                    seriesLength=metadata.get("series_length", 20),
+                    createdAt=manifest.get("created_at", ""),
+                    updatedAt=manifest.get("updated_at", ""),
+                    currentPhase=state.get("current_phase", 1),
+                    progress=progress,
+                )
+            )
+        
+        return projects
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list projects: {str(e)}")
+
+
+@router.get("/projects/{project_id}", response_model=ProjectResponse)
+async def get_project(project_id: str):
+    """Get project details."""
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        metadata = manifest.get("metadata", {})
+        state = manifest.get("state", {})
+        
+        phases_completed = len(state.get("phases_completed", []))
+        progress = (phases_completed / 7) * 100
+        
+        return ProjectResponse(
+            id=project_id,
+            title=metadata.get("title", "Untitled"),
+            author=metadata.get("author", "Unknown"),
+            genre=metadata.get("genre", "Unknown"),
+            seriesLength=metadata.get("series_length", 20),
+            createdAt=manifest.get("created_at", ""),
+            updatedAt=manifest.get("updated_at", ""),
+            currentPhase=state.get("current_phase", 1),
+            progress=progress,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get project: {str(e)}")
+
+
+@router.delete("/projects/{project_id}")
+async def delete_project(project_id: str):
+    """Delete a project."""
+    try:
+        result = storage_manager.delete_project(project_id)
+        return result
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete project: {str(e)}")
+
+
+# Workflow Execution Endpoints
+
+@router.post("/projects/{project_id}/phases/{phase}/execute")
+async def execute_phase(project_id: str, phase: int, request: PhaseExecuteRequest):
+    """
+    Start executing a workflow phase using Temporal.
+    
+    Supports all 7 phases of the Novel Weaver Studio workflow.
+    """
+    try:
+        # Verify project exists
+        storage_manager.get_project_manifest(project_id)
+        
+        # Import workflow client
+        from ..workflows.client import get_temporal_client
+        from ..config import settings
+        
+        client = await get_temporal_client()
+        
+        if phase == 1:
+            from ..workflows.phase1_initial_setup import Phase1InitialSetupWorkflow, Phase1Input
+            
+            workflow_input = Phase1Input(
+                project_id=project_id,
+                genre=request.inputs.get("genre"),
+                book_title=request.inputs.get("book_title"),
+                initial_ideas=request.inputs.get("initial_ideas"),
+                writing_samples=request.inputs.get("writing_samples"),
+                outline_template=request.inputs.get("outline_template"),
+                prohibited_words=request.inputs.get("prohibited_words"),
+            )
+            
+            workflow_id = f"phase1-{project_id}-{uuid.uuid4()}"
+            
+            from datetime import timedelta
+            
+            handle = await client.start_workflow(
+                Phase1InitialSetupWorkflow.run,
+                workflow_input,
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+                execution_timeout=timedelta(hours=1),
+                run_timeout=timedelta(hours=1),
+            )
+            
+            return WorkflowStatus(
+                workflowId=workflow_id,
+                phase=phase,
+                status=PhaseStatus.IN_PROGRESS,
+                progress=0.0,
+                currentStep="Starting Phase 1: Initial Setup & Research",
+                outputs={},
+            )
+        
+        elif phase == 2:
+            from ..workflows.phase2_brainstorming import Phase2BrainstormingWorkflow, Phase2Input
+            
+            workflow_input = Phase2Input(
+                project_id=project_id,
+                extra_notes=request.inputs.get("extra_notes"),
+                auto_approve=request.inputs.get("auto_approve", False),
+            )
+            
+            workflow_id = f"phase2-{project_id}-{uuid.uuid4()}"
+            
+            handle = await client.start_workflow(
+                Phase2BrainstormingWorkflow.run,
+                workflow_input,
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+                execution_timeout=timedelta(hours=1),
+                run_timeout=timedelta(hours=1),
+            )
+            
+            return WorkflowStatus(
+                workflowId=workflow_id,
+                phase=phase,
+                status=PhaseStatus.IN_PROGRESS,
+                progress=0.0,
+                currentStep="Starting Phase 2: Brainstorming & Series Outline",
+                outputs={},
+            )
+        
+        elif phase == 3:
+            from ..workflows.phase3_call_sheet import Phase3CallSheetWorkflow, Phase3Input
+            
+            workflow_input = Phase3Input(project_id=project_id)
+            
+            workflow_id = f"phase3-{project_id}-{uuid.uuid4()}"
+            
+            handle = await client.start_workflow(
+                Phase3CallSheetWorkflow.run,
+                workflow_input,
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+                execution_timeout=timedelta(hours=1),
+                run_timeout=timedelta(hours=1),
+            )
+            
+            return WorkflowStatus(
+                workflowId=workflow_id,
+                phase=phase,
+                status=PhaseStatus.IN_PROGRESS,
+                progress=0.0,
+                currentStep="Starting Phase 3: Call Sheet Generation",
+                outputs={},
+            )
+        
+        elif phase == 4:
+            from ..workflows.phase4_characters import Phase4CharactersWorldbuildingWorkflow, Phase4Input
+            
+            workflow_input = Phase4Input(project_id=project_id)
+            
+            workflow_id = f"phase4-{project_id}-{uuid.uuid4()}"
+            
+            handle = await client.start_workflow(
+                Phase4CharactersWorldbuildingWorkflow.run,
+                workflow_input,
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+                execution_timeout=timedelta(hours=1),
+                run_timeout=timedelta(hours=1),
+            )
+            
+            return WorkflowStatus(
+                workflowId=workflow_id,
+                phase=phase,
+                status=PhaseStatus.IN_PROGRESS,
+                progress=0.0,
+                currentStep="Starting Phase 4: Characters & Worldbuilding",
+                outputs={},
+            )
+        
+        elif phase == 5:
+            from ..workflows.phase5_chapter_outline import Phase5ChapterOutlineWorkflow, Phase5Input
+            
+            workflow_input = Phase5Input(
+                project_id=project_id,
+                outline_template=request.inputs.get("outline_template", "USE_BUNDLE"),
+                auto_approve=request.inputs.get("auto_approve", False),
+            )
+            
+            workflow_id = f"phase5-{project_id}-{uuid.uuid4()}"
+            
+            handle = await client.start_workflow(
+                Phase5ChapterOutlineWorkflow.run,
+                workflow_input,
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+                execution_timeout=timedelta(hours=1),
+                run_timeout=timedelta(hours=1),
+            )
+            
+            return WorkflowStatus(
+                workflowId=workflow_id,
+                phase=phase,
+                status=PhaseStatus.IN_PROGRESS,
+                progress=0.0,
+                currentStep="Starting Phase 5: Chapter Outline Creation",
+                outputs={},
+            )
+        
+        elif phase == 6:
+            from ..workflows.phase6_chapter_writing import Phase6SingleChapterWorkflow, Phase6Input
+            
+            # Phase 6 requires chapter number and title
+            if not request.inputs.get("chapter_number") or not request.inputs.get("chapter_title"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Phase 6 requires chapter_number and chapter_title in inputs"
+                )
+            
+            workflow_input = Phase6Input(
+                project_id=project_id,
+                chapter_number=request.inputs.get("chapter_number"),
+                chapter_title=request.inputs.get("chapter_title"),
+                chapter_notes=request.inputs.get("chapter_notes"),
+                auto_approve_improvements=request.inputs.get("auto_approve_improvements", False),
+                auto_approve_final=request.inputs.get("auto_approve_final", False),
+            )
+            
+            workflow_id = f"phase6-{project_id}-ch{workflow_input.chapter_number}-{uuid.uuid4()}"
+            
+            handle = await client.start_workflow(
+                Phase6SingleChapterWorkflow.run,
+                workflow_input,
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+                execution_timeout=timedelta(hours=2), # Longer for writing
+                run_timeout=timedelta(hours=2),
+            )
+            
+            return WorkflowStatus(
+                workflowId=workflow_id,
+                phase=phase,
+                status=PhaseStatus.IN_PROGRESS,
+                progress=0.0,
+                currentStep=f"Starting Phase 6: Writing Chapter {workflow_input.chapter_number}",
+                outputs={},
+            )
+        
+        elif phase == 7:
+            from ..workflows.phase7_compilation import Phase7FinalCompilationWorkflow, Phase7Input
+            
+            # Get author name from project manifest
+            manifest = storage_manager.get_project_manifest(project_id)
+            author_name = manifest.get("metadata", {}).get("author", "Unknown Author")
+            
+            workflow_input = Phase7Input(
+                project_id=project_id,
+                author_name=author_name,
+            )
+            
+            workflow_id = f"phase7-{project_id}-{uuid.uuid4()}"
+            
+            handle = await client.start_workflow(
+                Phase7FinalCompilationWorkflow.run,
+                workflow_input,
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+                execution_timeout=timedelta(hours=1),
+                run_timeout=timedelta(hours=1),
+            )
+            
+            return WorkflowStatus(
+                workflowId=workflow_id,
+                phase=phase,
+                status=PhaseStatus.IN_PROGRESS,
+                progress=0.0,
+                currentStep="Starting Phase 7: Final Manuscript Compilation",
+                outputs={},
+            )
+        
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid phase number: {phase}. Valid phases are 1-7."
+            )
+            
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to execute phase: {str(e)}")
+
+
+@router.get("/projects/{project_id}/phases/{phase}/status")
+async def get_phase_status(project_id: str, phase: int, workflow_id: str | None = None):
+    """Get the status of a workflow phase."""
+    try:
+        # If workflow_id provided, query Temporal for actual status
+        if workflow_id:
+            try:
+                from ..workflows.client import get_temporal_client
+                
+                client = await get_temporal_client()
+                handle = client.get_workflow_handle(workflow_id)
+                
+                try:
+                    # Query for granular status
+                    current_status = await handle.query("get_current_status")
+                    outputs = {}
+                    
+                    # If waiting for review, get content
+                    if current_status == "waiting_for_review":
+                        content = await handle.query("get_pending_content")
+                        if content:
+                            outputs["pending_review"] = {
+                                "content": content,
+                                "description": "Please review the generated Context Bundle."
+                            }
+                            
+                    # Map status to progress
+                    progress_map = {
+                        "starting": 5,
+                        "collecting_inputs": 10,
+                        "waiting_for_inputs": 10,
+                        "researching": 30,
+                        "generating_stylesheets": 50,
+                        "generating_context_bundle": 70,
+                        "waiting_for_review": 90,
+                        "revising": 80,
+                    }
+                    
+                    return WorkflowStatus(
+                        workflowId=workflow_id,
+                        phase=phase,
+                        status=PhaseStatus.IN_PROGRESS,
+                        progress=float(progress_map.get(current_status, 50)),
+                        currentStep=current_status.replace("_", " ").title(),
+                        outputs=outputs,
+                    )
+                except Exception as e:
+                    # If query fails, check if execution is actually completed
+                    try:
+                        desc = await handle.describe()
+                        if desc.status == 3: # COMPLETED
+                            result = await handle.result()
+                            return WorkflowStatus(
+                                workflowId=workflow_id,
+                                phase=phase,
+                                status=PhaseStatus.COMPLETED,
+                                progress=100.0,
+                                outputs={"result": str(result)},
+                            )
+                    except:
+                        pass
+                        
+                    # Fallback if query fails or still running but query failed
+                    return WorkflowStatus(
+                        workflowId=workflow_id,
+                        phase=phase,
+                        status=PhaseStatus.IN_PROGRESS,
+                        progress=50.0,
+                        outputs={},
+                    )
+            except:
+                pass  # Fall through to manifest-based status
+        
+        # Fall back to manifest-based status
+        manifest = storage_manager.get_project_manifest(project_id)
+        state = manifest.get("state", {})
+        phases_completed = state.get("phases_completed", [])
+        
+        if phase in phases_completed:
+            phase_status = PhaseStatus.COMPLETED
+            progress = 100.0
+        elif phase == state.get("current_phase", 1):
+            phase_status = PhaseStatus.IN_PROGRESS
+            progress = 50.0
+        else:
+            phase_status = PhaseStatus.NOT_STARTED
+            progress = 0.0
+        
+        return WorkflowStatus(
+            workflowId=f"workflow-{project_id}-phase-{phase}",
+            phase=phase,
+            status=phase_status,
+            progress=progress,
+            outputs={},
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+
+# Artifact Management Endpoints
+
+@router.get("/projects/{project_id}/artifacts", response_model=List[ArtifactInfo])
+async def list_artifacts(project_id: str, phase: str = None):
+    """List all artifacts in a project."""
+    try:
+        artifacts = storage_manager.list_artifacts(project_id, phase)
+        return [ArtifactInfo(**artifact) for artifact in artifacts]
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list artifacts: {str(e)}")
+
+
+@router.get("/projects/{project_id}/artifacts/{artifact_path:path}")
+async def get_artifact(project_id: str, artifact_path: str):
+    """Get artifact content."""
+    try:
+        result = novel_vault.novel_read_text(project_id, artifact_path)
+        return {"content": result["text"], "path": artifact_path}
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Artifact {artifact_path} not found in project {project_id}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get artifact: {str(e)}")
+
+
+@router.put("/projects/{project_id}/artifacts/{artifact_path:path}")
+async def update_artifact(
+    project_id: str, artifact_path: str, request: ArtifactUpdateRequest
+):
+    """Update artifact content."""
+    try:
+        result = novel_vault.novel_write_text(project_id, artifact_path, request.content)
+        return {"success": True, "path": artifact_path, "bytes_written": result["bytes_written"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update artifact: {str(e)}")
+"""
+Additional API endpoints for workflow control, human input, and chapter management.
+"""
+
+# Workflow Control Endpoints
+
+@router.post("/workflows/{workflow_id}/cancel")
+async def cancel_workflow(workflow_id: str):
+    """Cancel a running workflow."""
+    try:
+        from ..workflows.client import get_temporal_client
+        
+        client = await get_temporal_client()
+        handle = client.get_workflow_handle(workflow_id)
+        
+        await handle.cancel()
+        
+        return {"success": True, "workflow_id": workflow_id, "status": "cancelled"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cancel workflow: {str(e)}")
+
+
+@router.post("/workflows/{workflow_id}/signal")
+async def signal_workflow(workflow_id: str, signal: WorkflowSignal):
+    """Send a signal to a running workflow."""
+    try:
+        from ..workflows.client import get_temporal_client
+        
+        client = await get_temporal_client()
+        handle = client.get_workflow_handle(workflow_id)
+        
+        # Send signal with args as a single dict parameter
+        await handle.signal(signal.signal_name, signal.args)
+        
+        return {"success": True, "workflow_id": workflow_id, "signal": signal.signal_name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to signal workflow: {str(e)}")
+
+
+@router.get("/workflows/{workflow_id}/history")
+async def get_workflow_history(workflow_id: str):
+    """Get workflow execution history."""
+    try:
+        from ..workflows.client import get_temporal_client
+        
+        client = await get_temporal_client()
+        handle = client.get_workflow_handle(workflow_id)
+        
+        # Get workflow description which includes history
+        description = await handle.describe()
+        
+        return {
+            "workflow_id": workflow_id,
+            "status": description.status.name,
+            "start_time": description.start_time.isoformat() if description.start_time else None,
+            "close_time": description.close_time.isoformat() if description.close_time else None,
+            "execution_time": description.execution_time,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get workflow history: {str(e)}")
+
+
+# Human Input Endpoints
+
+@router.get("/projects/{project_id}/pending-inputs", response_model=List[PendingInput])
+async def list_pending_inputs(project_id: str):
+    """List all workflows awaiting human input for a project."""
+    try:
+        from ..workflows.client import get_temporal_client
+        
+        # This is a simplified implementation
+        # In production, you'd query Temporal for workflows in a specific state
+        # For now, we'll return an empty list and implement this when we have
+        # a proper workflow tracking system
+        
+        # TODO: Implement proper workflow query
+        return []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list pending inputs: {str(e)}")
+
+
+@router.post("/workflows/{workflow_id}/respond")
+async def respond_to_workflow(workflow_id: str, response: HumanInputResponse):
+    """Submit a response to a workflow awaiting human input."""
+    try:
+        from ..workflows.client import get_temporal_client
+        
+        client = await get_temporal_client()
+        handle = client.get_workflow_handle(workflow_id)
+        
+        # Determine which signal to send based on workflow ID and input type
+        # Phase 1 workflows have specific signals for different stages
+        if "phase1" in workflow_id:
+            # Check if this is user input or approval
+            if "genre" in response.inputs or "book_title" in response.inputs:
+                # Initial user input signal
+                await handle.signal("provide_user_input", response.inputs)
+            elif "decision" in response.inputs:
+                # Context approval signal
+                decision = response.inputs.get("decision", "")
+                notes = response.inputs.get("revision_notes", "")
+                await handle.signal("provide_context_approval", decision, notes)
+            else:
+                # Generic fallback
+                await handle.signal("provide_user_input", response.inputs)
+        elif "phase2" in workflow_id:
+            # Phase 2 uses generic signal (existing behavior)
+            await handle.signal("human_input_received", response.inputs)
+        else:
+            # Generic signal for other phases
+            await handle.signal("human_input_received", response.inputs)
+        
+        return {"success": True, "workflow_id": workflow_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to respond to workflow: {str(e)}")
+
+
+# Chapter Management Endpoints
+
+@router.get("/projects/{project_id}/chapters", response_model=List[ChapterDetail])
+async def list_chapters(project_id: str):
+    """List all chapters from the project's outline."""
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        chapters_data = manifest.get("chapters", [])
+        
+        chapters = []
+        for chapter_data in chapters_data:
+            chapter_num = chapter_data.get("number")
+            
+            # Check which artifacts exist for this chapter
+            chapter_dir = f"phase6_outputs/chapter_{chapter_num}"
+            has_scene_brief = False
+            has_first_draft = False
+            has_final = False
+            word_count = None
+            last_updated = None
+            
+            try:
+                # Check for scene brief
+                novel_vault.novel_read_text(project_id, f"{chapter_dir}/scene_brief.md")
+                has_scene_brief = True
+            except:
+                pass
+            
+            try:
+                # Check for first draft
+                novel_vault.novel_read_text(project_id, f"{chapter_dir}/first_draft.md")
+                has_first_draft = True
+            except:
+                pass
+            
+            try:
+                # Check for final chapter
+                final_result = novel_vault.novel_read_text(project_id, f"{chapter_dir}/final.md")
+                has_final = True
+                # Rough word count
+                word_count = len(final_result["text"].split())
+                last_updated = final_result.get("modified")
+            except:
+                pass
+            
+            # Determine status
+            if has_final:
+                status = "completed"
+            elif has_first_draft or has_scene_brief:
+                status = "in_progress"
+            else:
+                status = "not_started"
+            
+            chapters.append(ChapterDetail(
+                number=chapter_num,
+                title=chapter_data.get("title", f"Chapter {chapter_num}"),
+                status=status,
+                word_count=word_count,
+                last_updated=last_updated,
+                has_scene_brief=has_scene_brief,
+                has_first_draft=has_first_draft,
+                has_final=has_final,
+            ))
+        
+        return chapters
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list chapters: {str(e)}")
+
+
+@router.get("/projects/{project_id}/chapters/{chapter_number}", response_model=ChapterDetail)
+async def get_chapter(project_id: str, chapter_number: int):
+    """Get details about a specific chapter."""
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        chapters_data = manifest.get("chapters", [])
+        
+        # Find the chapter
+        chapter_data = next(
+            (c for c in chapters_data if c.get("number") == chapter_number),
+            None
+        )
+        
+        if not chapter_data:
+            raise HTTPException(status_code=404, detail=f"Chapter {chapter_number} not found")
+        
+        # Check which artifacts exist
+        chapter_dir = f"phase6_outputs/chapter_{chapter_number}"
+        has_scene_brief = False
+        has_first_draft = False
+        has_final = False
+        word_count = None
+        last_updated = None
+        
+        try:
+            novel_vault.novel_read_text(project_id, f"{chapter_dir}/scene_brief.md")
+            has_scene_brief = True
+        except:
+            pass
+        
+        try:
+            novel_vault.novel_read_text(project_id, f"{chapter_dir}/first_draft.md")
+            has_first_draft = True
+        except:
+            pass
+        
+        try:
+            final_result = novel_vault.novel_read_text(project_id, f"{chapter_dir}/final.md")
+            has_final = True
+            word_count = len(final_result["text"].split())
+            last_updated = final_result.get("modified")
+        except:
+            pass
+        
+        # Determine status
+        if has_final:
+            status = "completed"
+        elif has_first_draft or has_scene_brief:
+            status = "in_progress"
+        else:
+            status = "not_started"
+        
+        return ChapterDetail(
+            number=chapter_number,
+            title=chapter_data.get("title", f"Chapter {chapter_number}"),
+            status=status,
+            word_count=word_count,
+            last_updated=last_updated,
+            has_scene_brief=has_scene_brief,
+            has_first_draft=has_first_draft,
+            has_final=has_final,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get chapter: {str(e)}")
+
+
+@router.put("/projects/{project_id}/chapters/{chapter_number}")
+async def update_chapter(project_id: str, chapter_number: int, update: ChapterUpdate):
+    """Update chapter metadata."""
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        chapters_data = manifest.get("chapters", [])
+        
+        # Find and update the chapter
+        chapter_found = False
+        for chapter in chapters_data:
+            if chapter.get("number") == chapter_number:
+                if update.title:
+                    chapter["title"] = update.title
+                if update.notes:
+                    chapter["notes"] = update.notes
+                chapter_found = True
+                break
+        
+        if not chapter_found:
+            raise HTTPException(status_code=404, detail=f"Chapter {chapter_number} not found")
+        
+        # Update manifest
+        manifest["chapters"] = chapters_data
+        novel_vault.novel_update_manifest(project_id, {"chapters": chapters_data})
+        
+        return {"success": True, "chapter_number": chapter_number}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update chapter: {str(e)}")
+
+
+# Progress & Stats Endpoints
+
+@router.get("/projects/{project_id}/progress", response_model=ProjectProgress)
+async def get_project_progress(project_id: str):
+    """Get detailed progress information for a project."""
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        state = manifest.get("state", {})
+        chapters_data = manifest.get("chapters", [])
+        
+        # Calculate phase progress
+        phases_completed = state.get("phases_completed", [])
+        phases = []
+        
+        for phase_num in range(1, 8):
+            if phase_num in phases_completed:
+                phases.append(PhaseProgress(
+                    phase=phase_num,
+                    status=PhaseStatus.COMPLETED,
+                    progress=100.0,
+                    started_at=None,  # TODO: Track this
+                    completed_at=None,  # TODO: Track this
+                ))
+            elif phase_num == state.get("current_phase"):
+                phases.append(PhaseProgress(
+                    phase=phase_num,
+                    status=PhaseStatus.IN_PROGRESS,
+                    progress=50.0,  # Rough estimate
+                    started_at=None,
+                    completed_at=None,
+                ))
+            else:
+                phases.append(PhaseProgress(
+                    phase=phase_num,
+                    status=PhaseStatus.NOT_STARTED,
+                    progress=0.0,
+                    started_at=None,
+                    completed_at=None,
+                ))
+        
+        # Count completed chapters
+        chapters_completed = 0
+        for chapter in chapters_data:
+            chapter_num = chapter.get("number")
+            chapter_dir = f"phase6_outputs/chapter_{chapter_num}"
+            try:
+                novel_vault.novel_read_text(project_id, f"{chapter_dir}/final.md")
+                chapters_completed += 1
+            except:
+                pass
+        
+        # Calculate overall progress
+        phase_weight = 0.7  # 70% weight to phases
+        chapter_weight = 0.3  # 30% weight to chapters
+        
+        phase_progress = (len(phases_completed) / 7) * 100
+        chapter_progress = (chapters_completed / max(len(chapters_data), 1)) * 100
+        
+        overall_progress = (phase_progress * phase_weight) + (chapter_progress * chapter_weight)
+        
+        return ProjectProgress(
+            project_id=project_id,
+            overall_progress=overall_progress,
+            phases=phases,
+            chapters_completed=chapters_completed,
+            total_chapters=len(chapters_data),
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")
+
+
+@router.get("/projects/{project_id}/timeline", response_model=List[TimelineEvent])
+async def get_project_timeline(project_id: str):
+    """Get project timeline/activity log."""
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        
+        # Build timeline from manifest data
+        events = []
+        
+        # Project creation
+        events.append(TimelineEvent(
+            timestamp=manifest.get("created_at", ""),
+            event_type="project_created",
+            phase=None,
+            description=f"Project '{manifest.get('metadata', {}).get('title')}' created",
+        ))
+        
+        # Completed phases
+        for phase in manifest.get("state", {}).get("phases_completed", []):
+            events.append(TimelineEvent(
+                timestamp=manifest.get("updated_at", ""),  # TODO: Track individual phase completion times
+                event_type="phase_completed",
+                phase=phase,
+                description=f"Completed Phase {phase}",
+            ))
+        
+        # Sort by timestamp (most recent first)
+        events.sort(key=lambda x: x.timestamp, reverse=True)
+        
+        return events
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get timeline: {str(e)}")
+
+
+@router.get("/system/stats", response_model=SystemStats)
+async def get_system_stats():
+    """Get system-wide statistics."""
+    try:
+        import time
+        import os
+        
+        # Get all projects
+        projects = storage_manager.list_all_projects()
+        total_projects = len(projects)
+        
+        # Calculate storage (simplified)
+        storage_mb = 0.0
+        try:
+            vault_path = storage_manager.vault_root
+            for dirpath, dirnames, filenames in os.walk(vault_path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    storage_mb += os.path.getsize(filepath) / (1024 * 1024)
+        except:
+            pass
+        
+        # TODO: Get active workflows from Temporal
+        active_workflows = 0
+        
+        # Uptime (simplified - would need to track server start time)
+        uptime_seconds = 0
+        
+        return SystemStats(
+            total_projects=total_projects,
+            active_workflows=active_workflows,
+            total_storage_mb=round(storage_mb, 2),
+            uptime_seconds=uptime_seconds,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get system stats: {str(e)}")
