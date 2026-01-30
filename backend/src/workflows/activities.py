@@ -256,7 +256,7 @@ async def parse_outline_activity(
     """
     activity.logger.info(f"Parsing outline for project {project_id}")
     result = novel_vault.novel_parse_outline(project_id)
-    chapters_count = result.get("chapters_count", 0)
+    chapters_count = result.get("total_chapters", 0)
     activity.logger.info(f"Parsed {chapters_count} chapters")
     return chapters_count
 

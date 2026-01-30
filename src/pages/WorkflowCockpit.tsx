@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 
 // Type definitions for component state
 interface PhaseCompletionData {
@@ -19,7 +19,9 @@ interface PhaseInputs {
   writing_samples?: string;
   outline_template?: string;
   prohibited_words?: string;
-  [key: string]: string | undefined;
+  chapter_number?: number;
+  chapter_title?: string;
+  [key: string]: string | number | undefined;
 }
 
 interface ValidationError {
@@ -49,8 +51,11 @@ import {
   usePhaseStatus,
   usePendingInputs,
   useProjects,
-  useCancelWorkflow
+  useCancelWorkflow,
+  useChapters
 } from '@/api/hooks';
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
+import type { ChapterDetail } from '@/api/types';
 import { apiClient } from '@/api/client';
 import {
   Play,
@@ -81,6 +86,7 @@ export default function WorkflowCockpit() {
   const { data: progressData, refetch: refetchProgress } = useProjectProgress(projectId);
   const { data: artifactsData } = useArtifacts(projectId);
   const { data: pendingInputs } = usePendingInputs(projectId, { refetchInterval: 5000 });
+  const { data: chaptersData } = useChapters(projectId);
   const executePhase = useExecutePhase();
   const cancelWorkflow = useCancelWorkflow();
 
@@ -116,6 +122,23 @@ export default function WorkflowCockpit() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [activeTab, setActiveTab] = useState<'genre_tropes' | 'style_sheet' | 'context_bundle'>('genre_tropes');
   const [savedOutputs, setSavedOutputs] = useState<Record<string, { content: string; name: string; type: string }>>({});
+  // Typed helper for chapters
+  const chaptersList: ChapterDetail[] = useMemo(
+    () => (chaptersData || []) as ChapterDetail[],
+    [chaptersData]
+  );
+
+  // Autofill Phase 6 dialog with the next incomplete chapter from outline
+  useEffect(() => {
+    if (!isPhase6InputOpen || !chaptersList || chaptersList.length === 0) return;
+    // If no title selected yet, pick first not completed chapter
+    if (!phase6FormData.chapter_title) {
+      const next: ChapterDetail | undefined = chaptersList.find((c) => c.status !== 'completed') || chaptersList[0];
+      if (next) {
+        setPhase6FormData({ chapter_number: String(next.number), chapter_title: next.title });
+      }
+    }
+  }, [isPhase6InputOpen, chaptersList, phase6FormData.chapter_title]);
   const [phaseOutputs, setPhaseOutputs] = useState<Record<number, PhaseCompletionData>>({});
   const [viewingArtifact, setViewingArtifact] = useState<Artifact | null>(null);
   const [isArtifactViewOpen, setIsArtifactViewOpen] = useState(false);
@@ -310,7 +333,19 @@ export default function WorkflowCockpit() {
 
         // Check if workflow completed
         if (statusData.status === 'completed') {
-          const outputs = statusData.outputs;
+          let outputs = statusData.outputs;
+          console.log('=== PHASE COMPLETION DATA ===');
+          console.log('Phase:', currentPhase);
+          console.log('Raw outputs:', JSON.stringify(outputs, null, 2));
+          // For Phase 5, also fetch the saved outline artifact to ensure we have the Markdown
+          if (currentPhase === 5 && projectId) {
+            try {
+              const outline = await apiClient.getArtifact(projectId, 'phase5_outputs/outline.md');
+              outputs = { ...outputs, outline: outline.content };
+            } catch (e) {
+              console.warn('Could not fetch outline artifact:', e);
+            }
+          }
           setCompletionData(outputs);
           setIsCompletionDialogOpen(true);
 
@@ -474,12 +509,24 @@ export default function WorkflowCockpit() {
       return content || JSON.stringify(storedOutput, null, 2);
     }
 
-    // For other phases, show the result or output
-    if (storedOutput.result) {
-      return storedOutput.result;
-    }
-    if (storedOutput.output) {
-      return storedOutput.output;
+    // For other phases, prefer known content fields
+    const obj = storedOutput as Record<string, unknown>;
+    const preferredFields = [
+      'outline',
+      'chapter_outline',
+      'series_outline',
+      'call_sheet',
+      'character_profiles',
+      'worldbuilding',
+      'result',
+      'output',
+      'content',
+    ];
+    for (const key of preferredFields) {
+      const val = obj[key];
+      if (typeof val === 'string' && val.trim().length > 0) {
+        return val as string;
+      }
     }
 
     // Fallback to JSON representation
@@ -533,7 +580,7 @@ export default function WorkflowCockpit() {
       }
       // For Phase 6, use chapter inputs
       else if (phaseNum === 6) {
-        inputs.chapter_number = phase6FormData.chapter_number;
+        inputs.chapter_number = parseInt(phase6FormData.chapter_number, 10);
         inputs.chapter_title = phase6FormData.chapter_title;
       }
       // For Phase 2+, check if previous phase has outputs
@@ -774,7 +821,12 @@ export default function WorkflowCockpit() {
 
   const handleEditInEditor = () => {
     if (activePhase.id === 6) {
-      navigate('/chapter-studio');
+      // Ensure Chapter Studio knows which project to load
+      if (projectId) {
+        navigate(`/chapter-studio?projectId=${projectId}`);
+      } else {
+        navigate('/chapter-studio');
+      }
     } else if (activePhase.id === 7) {
       navigate('/compile');
     } else {
@@ -1303,6 +1355,38 @@ export default function WorkflowCockpit() {
           </DialogHeader>
 
           <div className="space-y-6 py-4">
+            {/* Chapter selector from parsed outline */}
+            {chaptersData && chaptersData.length > 0 && (
+              <div className="space-y-2">
+                <Label>Choose Chapter</Label>
+                <Select
+                  value={phase6FormData.chapter_number}
+                  onValueChange={(val) => {
+                    const num = Number(val);
+                    const ch = chaptersList.find((c: ChapterDetail) => c.number === num);
+                    setPhase6FormData({
+                      chapter_number: String(val),
+                      chapter_title: ch?.title || '',
+                    });
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a chapter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chaptersList.map((c: ChapterDetail) => (
+                      <SelectItem key={c.number} value={String(c.number)}>
+                        Chapter {c.number}: {c.title} {c.status === 'completed' ? '✅' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {chaptersList.filter((c: ChapterDetail) => c.status === 'completed').length}/{chaptersList.length} completed
+                </p>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="chapter_number">Chapter Number *</Label>
               <Input
@@ -1432,9 +1516,11 @@ export default function WorkflowCockpit() {
                   {(() => {
                     // Try to parse completion data if it's a string
                     let parsedData = completionData;
+                    console.log('Completion dialog - raw data:', completionData);
                     if (typeof completionData === 'string') {
                       try {
                         parsedData = JSON.parse(completionData);
+                        console.log('Parsed from string:', parsedData);
                       } catch (e) {
                         parsedData = { content: completionData };
                       }
@@ -1452,7 +1538,8 @@ export default function WorkflowCockpit() {
                       // Phase 4: character_profiles or worldbuilding
                       if (typeof obj.character_profiles === 'string') return { title: 'Character Profiles', content: obj.character_profiles };
                       if (typeof obj.worldbuilding === 'string') return { title: 'Worldbuilding', content: obj.worldbuilding };
-                      // Phase 5: chapter_outline
+                      // Phase 5: outline (from Phase5Output)
+                      if (typeof obj.outline === 'string') return { title: 'Chapter Outline', content: obj.outline };
                       if (typeof obj.chapter_outline === 'string') return { title: 'Chapter Outline', content: obj.chapter_outline };
                       // Generic fields
                       if (typeof obj.result === 'string') return { title: 'Result', content: obj.result };
@@ -1551,6 +1638,9 @@ export default function WorkflowCockpit() {
                         } else if (typeof obj.worldbuilding === 'string') {
                           content = obj.worldbuilding;
                           outputName = 'Worldbuilding';
+                        } else if (typeof obj.outline === 'string') {
+                          content = obj.outline;
+                          outputName = 'Chapter Outline';
                         } else if (typeof obj.chapter_outline === 'string') {
                           content = obj.chapter_outline;
                           outputName = 'Chapter Outline';

@@ -406,8 +406,15 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                     try:
                         result = await handle.result()
                         
+                        # Convert dataclass result to dict
+                        if hasattr(result, '__dataclass_fields__'):
+                            # It's a dataclass - convert to dict
+                            from dataclasses import asdict
+                            outputs = asdict(result)
+                        else:
+                            outputs = {"result": str(result)}
+                        
                         # For Phase 1, fetch the generated artifacts
-                        outputs = {"result": str(result)}
                         if phase == 1:
                             try:
                                 # Fetch Phase 1 artifacts
@@ -688,7 +695,7 @@ async def list_chapters(project_id: str):
     """List all chapters from the project's outline."""
     try:
         manifest = storage_manager.get_project_manifest(project_id)
-        chapters_data = manifest.get("chapters", [])
+        chapters_data = manifest.get("state", {}).get("chapters", [])
         
         chapters = []
         for chapter_data in chapters_data:
@@ -757,7 +764,7 @@ async def get_chapter(project_id: str, chapter_number: int):
     """Get details about a specific chapter."""
     try:
         manifest = storage_manager.get_project_manifest(project_id)
-        chapters_data = manifest.get("chapters", [])
+        chapters_data = manifest.get("state", {}).get("chapters", [])
         
         # Find the chapter
         chapter_data = next(
@@ -827,7 +834,7 @@ async def update_chapter(project_id: str, chapter_number: int, update: ChapterUp
     """Update chapter metadata."""
     try:
         manifest = storage_manager.get_project_manifest(project_id)
-        chapters_data = manifest.get("chapters", [])
+        chapters_data = manifest.get("state", {}).get("chapters", [])
         
         # Find and update the chapter
         chapter_found = False
@@ -843,9 +850,8 @@ async def update_chapter(project_id: str, chapter_number: int, update: ChapterUp
         if not chapter_found:
             raise HTTPException(status_code=404, detail=f"Chapter {chapter_number} not found")
         
-        # Update manifest
-        manifest["chapters"] = chapters_data
-        novel_vault.novel_update_manifest(project_id, {"chapters": chapters_data})
+        # Update manifest (store chapters under state)
+        novel_vault.novel_update_manifest(project_id, {"state": {"chapters": chapters_data}})
         
         return {"success": True, "chapter_number": chapter_number}
     except FileNotFoundError:
