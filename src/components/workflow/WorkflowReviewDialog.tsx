@@ -30,10 +30,24 @@ export function WorkflowReviewDialog({
   const [inputs, setInputs] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setInputs({});
+      return;
+    }
     const next: Record<string, string> = {};
     for (const key of fields) next[key] = '';
     setInputs(next);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setInputs((prev) => {
+      const next: Record<string, string> = { ...prev };
+      for (const key of fields) {
+        if (!(key in next)) next[key] = '';
+      }
+      return next;
+    });
   }, [open, fields]);
 
   const renderMarkdown = (text: string) => {
@@ -65,9 +79,10 @@ export function WorkflowReviewDialog({
   }, [inputs.decision]);
 
   const isSubmitDisabled = useMemo(() => {
-    const requiredKeys = [...fields, ...extraKeys];
-    return requiredKeys.some((k) => (inputs[k] || '').trim().length === 0);
-  }, [fields, extraKeys, inputs]);
+    // Only require the workflow-declared expected outputs.
+    // Extra keys (like revision_notes/custom_notes) are UX helpers and should not block submission.
+    return fields.some((k) => (inputs[k] || '').trim().length === 0);
+  }, [fields, inputs]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -99,7 +114,13 @@ export function WorkflowReviewDialog({
                     key={opt}
                     type="button"
                     variant="outline"
-                    onClick={() => setInputs((prev) => ({ ...prev, decision: opt }))}
+                    onClick={() => {
+                      setInputs((prev) => ({ ...prev, decision: opt }));
+                      // If the only required field is decision, allow single-click submit.
+                      if (fields.length === 1 && fields[0] === 'decision' && opt !== 'REVISE' && opt !== 'CUSTOM') {
+                        onSubmit({ decision: opt });
+                      }
+                    }}
                   >
                     {opt}
                   </Button>

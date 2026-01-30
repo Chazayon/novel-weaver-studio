@@ -45,20 +45,30 @@ export function useCockpitStorage<TPhaseOutput = unknown>(projectId?: string | n
   }, [persistPhaseOutputs]);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId) {
+      setSavedOutputs({});
+      setPhaseOutputs({});
+      return;
+    }
 
     try {
       const storedSaved = localStorage.getItem(`novel-weaver-saved-${projectId}`);
       if (storedSaved) {
         setSavedOutputs(JSON.parse(storedSaved));
+      } else {
+        setSavedOutputs({});
       }
 
       const storedOutputs = localStorage.getItem(`novel-weaver-outputs-${projectId}`);
       if (storedOutputs) {
         setPhaseOutputs(JSON.parse(storedOutputs));
+      } else {
+        setPhaseOutputs({});
       }
     } catch (error) {
       console.error('Failed to load from localStorage:', error);
+      setSavedOutputs({});
+      setPhaseOutputs({});
     }
   }, [projectId]);
 

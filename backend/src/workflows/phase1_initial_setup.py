@@ -88,8 +88,16 @@ class Phase1InitialSetupWorkflow:
         workflow.logger.info(f"Received user input signal with {len(inputs)} fields")
     
     @workflow.signal
-    async def provide_context_approval(self, decision: str, notes: str = "") -> None:
+    async def provide_context_approval(self, payload) -> None:
         """Signal to approve or revise the context bundle."""
+        decision = ""
+        notes = ""
+        if isinstance(payload, dict):
+            decision = str(payload.get("decision", ""))
+            notes = str(payload.get("notes") or payload.get("revision_notes") or "")
+        else:
+            decision = str(payload)
+
         self._context_approval = decision.strip().upper()
         self._revision_notes = notes
         workflow.logger.info(f"Received context approval signal: {self._context_approval}")

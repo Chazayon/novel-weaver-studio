@@ -663,10 +663,26 @@ async def list_pending_inputs(project_id: str):
         if not callable(list_fn):
             return []
 
-        try:
-            workflow_iter = list_fn(f"ExecutionStatus='Running' AND WorkflowId CONTAINS '{project_id}'")
-        except Exception:
-            workflow_iter = list_fn(f"WorkflowId CONTAINS '{project_id}'")
+        safe_project_id = project_id.replace("'", "''")
+        prefixes = [f"phase{i}-{safe_project_id}-" for i in range(1, 8)]
+        workflow_id_clauses = " OR ".join(
+            [f"WorkflowId STARTS_WITH '{prefix}'" for prefix in prefixes]
+        )
+
+        workflow_iter = None
+        for query in (
+            f"ExecutionStatus='Running' AND ({workflow_id_clauses})",
+            f"({workflow_id_clauses})",
+            "ExecutionStatus='Running'",
+        ):
+            try:
+                workflow_iter = list_fn(query)
+                break
+            except Exception:
+                workflow_iter = None
+
+        if workflow_iter is None:
+            return []
 
         async for wf in workflow_iter:
             workflow_id = (
@@ -675,6 +691,10 @@ async def list_pending_inputs(project_id: str):
                 or getattr(wf, "workflowId", None)
             )
             if not workflow_id or not isinstance(workflow_id, str):
+                continue
+
+            # Safety filter in case visibility query fallback is too broad
+            if f"-{project_id}-" not in workflow_id:
                 continue
 
             match = re.match(r"^phase(\d+)-", workflow_id)
@@ -751,11 +771,17 @@ async def respond_to_workflow(workflow_id: str, response: HumanInputResponse):
                 # Context approval signal
                 decision = response.inputs.get("decision", "")
                 notes = response.inputs.get("revision_notes", "")
-                await handle.signal("provide_context_approval", decision, notes)
+                await handle.signal(
+                    "provide_context_approval",
+                    {"decision": decision, "notes": notes, "revision_notes": notes},
+                )
             elif "revision_notes" in response.inputs:
                 # Support workflows that submit notes separately after a REVISE decision
                 notes = response.inputs.get("revision_notes", "")
-                await handle.signal("provide_context_approval", "REVISE", notes)
+                await handle.signal(
+                    "provide_context_approval",
+                    {"decision": "REVISE", "notes": notes, "revision_notes": notes},
+                )
             else:
                 # Generic fallback
                 await handle.signal("provide_user_input", response.inputs)
