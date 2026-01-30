@@ -143,23 +143,26 @@ class Phase6SingleChapterWorkflow:
         
         # Step 1: Load context bundle
         workflow.logger.info("Loading context bundle")
-        
-        context_bundle = await workflow.execute_activity(
+
+        context_bundle_fut = workflow.start_activity(
             load_artifact_activity,
             args=[input.project_id, "phase1_outputs/context_bundle.md"],
             start_to_close_timeout=workflow.timedelta(seconds=30),
             retry_policy=RetryPolicy(maximum_attempts=2),
         )
-        
+
         # Step 2: Load previous chapter
         workflow.logger.info("Loading previous chapter")
-        
-        previous_chapter_text = await workflow.execute_activity(
+
+        previous_chapter_text_fut = workflow.start_activity(
             get_previous_chapter_activity,
             args=[input.project_id, input.chapter_number],
             start_to_close_timeout=workflow.timedelta(seconds=30),
             retry_policy=RetryPolicy(maximum_attempts=2),
         )
+
+        context_bundle = await context_bundle_fut
+        previous_chapter_text = await previous_chapter_text_fut
         
         chapter_notes = input.chapter_notes or ""
         
@@ -204,10 +207,11 @@ Output as Markdown only.""",
         
         # Save scene brief
         chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
-        await workflow.execute_activity(
+        save_scene_brief_fut = workflow.start_activity(
             save_artifact_activity,
             args=[input.project_id, f"{chapter_dir}/scene_brief.md", scene_brief],
             start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
         )
         
         # Step 4: Write first draft
@@ -244,12 +248,15 @@ Output only the full chapter in Markdown with a heading:
             start_to_close_timeout=workflow.timedelta(minutes=10),
             retry_policy=RetryPolicy(maximum_attempts=3),
         )
+
+        await save_scene_brief_fut
         
         # Save first draft
-        await workflow.execute_activity(
+        save_first_draft_fut = workflow.start_activity(
             save_artifact_activity,
             args=[input.project_id, f"{chapter_dir}/first_draft.md", first_draft],
             start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
         )
         
         # Step 5: Analyze draft for improvements
@@ -291,11 +298,14 @@ Output as Markdown:
             retry_policy=RetryPolicy(maximum_attempts=3),
         )
 
+        await save_first_draft_fut
+
         # Save improvement plan
         await workflow.execute_activity(
             save_artifact_activity,
             args=[input.project_id, f"{chapter_dir}/improvement_plan.md", improvement_plan],
             start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
         )
         
         # Step 6: Get improvement path decision and implement
@@ -318,60 +328,34 @@ Output as Markdown:
         
         # Step 8: Update context bundle with final chapter
         workflow.logger.info("Updating context bundle with final chapter")
-        
-        updated_context_bundle = await workflow.execute_activity(
-            llm_generate_activity,
-            args=[
-                    "default",
-                    "default",
-                """You are a meticulous technical writer.
-You update the Context Bundle by storing the finished chapter for continuity.""",
-                f"""Update the Context Bundle as follows:
 
-- Add or update a section named "DRAFTING_PROGRESS".
-- Under it, store the latest finished chapter text.
-- If an entry for this chapter already exists, replace it.
-
-Preferred format inside DRAFTING_PROGRESS:
-## DRAFTING_PROGRESS
-### Chapter X
-[full chapter text...]
-
-Return the FULL updated Context Bundle in Markdown.
-
-<context_bundle>
-{context_bundle}
-</context_bundle>
-
-<final_chapter>
-{final_chapter}
-</final_chapter>""",
-                0.1,
-                14000,
-            ],
-            start_to_close_timeout=workflow.timedelta(minutes=5),
-            retry_policy=RetryPolicy(maximum_attempts=3),
+        updated_context_bundle = self._update_context_bundle_with_chapter(
+            context_bundle=context_bundle,
+            chapter_number=input.chapter_number,
+            final_chapter=final_chapter,
         )
         
         # Step 9: Save all artifacts
         workflow.logger.info("Saving final chapter and updated bundle")
-        
-        await workflow.execute_activity(
+
+        save_final_fut = workflow.start_activity(
             save_artifact_activity,
             args=[input.project_id, f"{chapter_dir}/final.md", final_chapter],
             start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
         )
-        
-        await workflow.execute_activity(
+
+        save_bundle_fut = workflow.start_activity(
             save_artifact_activity,
             args=[input.project_id, "phase1_outputs/context_bundle.md", updated_context_bundle],
             start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
         )
         
         # Step 10: Update manifest with chapter status
         workflow.logger.info("Updating chapter status in manifest")
-        
-        await workflow.execute_activity(
+
+        update_manifest_fut = workflow.start_activity(
             update_manifest_activity,
             args=[
                 input.project_id,
@@ -383,7 +367,12 @@ Return the FULL updated Context Bundle in Markdown.
                 },
             ],
             start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
         )
+
+        await save_final_fut
+        await save_bundle_fut
+        await update_manifest_fut
         
         workflow.logger.info(f"Phase 6 complete! Chapter {input.chapter_number} finished")
         
@@ -395,6 +384,52 @@ Return the FULL updated Context Bundle in Markdown.
             updated_context_bundle=updated_context_bundle,
             status="completed",
         )
+
+    def _update_context_bundle_with_chapter(
+        self,
+        context_bundle: str,
+        chapter_number: int,
+        final_chapter: str,
+    ) -> str:
+        import re
+
+        bundle = (context_bundle or "").rstrip() + "\n"
+        chapter_text = (final_chapter or "").strip()
+        chapter_block = f"### Chapter {chapter_number}\n\n{chapter_text}\n"
+
+        section_match = re.search(
+            r"(^##\s+DRAFTING_PROGRESS\s*$)",
+            bundle,
+            flags=re.MULTILINE,
+        )
+
+        if not section_match:
+            return (bundle.rstrip() + f"\n\n## DRAFTING_PROGRESS\n\n{chapter_block}\n").rstrip() + "\n"
+
+        section_start = section_match.start(1)
+        after_header_idx = section_match.end(1)
+
+        next_h2 = re.search(r"^##\s+", bundle[after_header_idx:], flags=re.MULTILINE)
+        section_end = after_header_idx + next_h2.start(0) if next_h2 else len(bundle)
+
+        section_body = bundle[after_header_idx:section_end]
+        chapter_header_re = re.compile(
+            rf"^###\s+Chapter\s+{chapter_number}\b.*$",
+            flags=re.MULTILINE,
+        )
+        chapter_header_match = chapter_header_re.search(section_body)
+
+        if not chapter_header_match:
+            new_section_body = section_body.rstrip() + "\n\n" + chapter_block + "\n"
+        else:
+            ch_start = chapter_header_match.start(0)
+            ch_after_header = chapter_header_match.end(0)
+            next_ch = re.search(r"^###\s+Chapter\s+", section_body[ch_after_header:], flags=re.MULTILINE)
+            ch_end = ch_after_header + next_ch.start(0) if next_ch else len(section_body)
+            new_section_body = section_body[:ch_start].rstrip() + "\n\n" + chapter_block + "\n" + section_body[ch_end:].lstrip()
+
+        updated = bundle[:after_header_idx] + "\n" + new_section_body.rstrip() + "\n" + bundle[section_end:].lstrip()
+        return updated.rstrip() + "\n"
     
     async def _process_improvements(
         self,
