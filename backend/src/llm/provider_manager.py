@@ -80,6 +80,57 @@ class ProviderManager:
         if not model:
             model = settings.default_llm_model
         
+        # Try primary generation
+        try:
+            return await self._generate_with_provider(
+                provider,
+                model,
+                prompt=prompt,
+                messages=messages,
+                role=role,
+                task=task,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        except Exception as e:
+            # Check if backup provider is configured
+            backup_provider = settings.backup_llm_provider
+            backup_model = settings.backup_llm_model
+            
+            if not backup_provider or not backup_model:
+                raise e
+                
+            print(f"Primary provider '{provider}' failed: {e}. Falling back to '{backup_provider}'...")
+            
+            try:
+                return await self._generate_with_provider(
+                    backup_provider,
+                    backup_model,
+                    prompt=prompt,
+                    messages=messages,
+                    role=role,
+                    task=task,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            except Exception as backup_error:
+                raise Exception(
+                    f"Both primary ({provider}) and backup ({backup_provider}) providers failed. "
+                    f"Primary error: {e}. Backup error: {backup_error}"
+                ) from e
+
+    async def _generate_with_provider(
+        self,
+        provider: str,
+        model: str,
+        prompt: str | None = None,
+        messages: List[Dict[str, str]] | None = None,
+        role: str | None = None,
+        task: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4000,
+    ) -> str:
+        """Internal method to generate text with a specific provider."""
         if provider not in self.providers:
             available = self.get_available_providers()
             raise ValueError(
