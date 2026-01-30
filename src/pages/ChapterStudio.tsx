@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChapterRow } from '@/components/shared/ChapterRow';
@@ -17,8 +17,9 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
-import { useChapters, useChapter, useArtifacts } from '@/api/hooks';
-import { Chapter } from '@/lib/mockData';
+import { useChapters, useChapter, useProjects } from '@/api/hooks';
+import { apiClient } from '@/api/client';
+import { Artifact, Chapter } from '@/lib/mockData';
 import {
   Play,
   Zap,
@@ -31,7 +32,6 @@ import {
   List,
   Settings
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 const tones = [
   { value: 'neutral', label: 'Neutral' },
@@ -43,12 +43,25 @@ const tones = [
 ];
 
 export default function ChapterStudio() {
-  const [searchParams] = useSearchParams();
-  const projectId = searchParams.get('projectId');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const projectId = searchParams.get('projectId') || searchParams.get('project');
+
+  const { data: projects, isLoading: projectsLoading } = useProjects();
+
+  // Load saved outputs (pinned artifacts) for continuity reference
+  const [savedOutputs, setSavedOutputs] = useState<Record<string, { content: string; name: string; type: string }>>({});
+
+  // Loaded chapter artifacts
+  const [sceneBriefContent, setSceneBriefContent] = useState('');
+  const [draftContent, setDraftContent] = useState('');
+  const [improvementPlanContent, setImprovementPlanContent] = useState('');
+  const [finalContent, setFinalContent] = useState('');
+
+  // Core continuity artifacts (outline / characters / worldbuilding / etc.)
+  const [coreArtifacts, setCoreArtifacts] = useState<Artifact[]>([]);
 
   // API hooks
   const { data: chaptersData, isLoading: chaptersLoading } = useChapters(projectId || undefined);
-  const { data: artifactsData } = useArtifacts(projectId || undefined);
 
   const [selectedChapterNumber, setSelectedChapterNumber] = useState(1);
   const { data: selectedChapterData } = useChapter(projectId || undefined, selectedChapterNumber);
@@ -58,6 +71,148 @@ export default function ChapterStudio() {
   const [isRunning, setIsRunning] = useState(false);
   const [isChaptersOpen, toggleChaptersOpen] = usePanelState('chapter-studio-chapters', true);
   const [isControlsOpen, toggleControlsOpen] = usePanelState('chapter-studio-controls', true);
+
+  function getArtifactType(name: string): Artifact['type'] {
+    const n = name.toLowerCase();
+    if (n.includes('outline')) return 'outline';
+    if (n.includes('character')) return 'characters';
+    if (n.includes('world')) return 'worldbuilding';
+    if (n.includes('style')) return 'style';
+    if (n.includes('chapter') || n.includes('scene') || n.includes('draft') || n.includes('final')) return 'chapter';
+    return 'other';
+  }
+
+  // If opened without a projectId, auto-select the only project (if there is exactly one)
+  useEffect(() => {
+    if (projectId) return;
+    if (!projects || projects.length !== 1) return;
+    setSearchParams({ projectId: projects[0].id });
+  }, [projectId, projects, setSearchParams]);
+
+  // Load pinned/saved outputs from localStorage
+  useEffect(() => {
+    if (!projectId) return;
+
+    try {
+      const storedSaved = localStorage.getItem(`novel-weaver-saved-${projectId}`);
+      if (storedSaved) {
+        setSavedOutputs(JSON.parse(storedSaved));
+      } else {
+        setSavedOutputs({});
+      }
+    } catch (error) {
+      console.error('Failed to load saved outputs from localStorage:', error);
+      setSavedOutputs({});
+    }
+  }, [projectId]);
+
+  // Fetch core continuity artifacts (best-effort)
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCore = async () => {
+      if (!projectId) return;
+      const specs: Array<{ path: string; name: string }> = [
+        { path: 'phase5_outputs/outline.md', name: 'Chapter Outline' },
+        { path: 'phase4_outputs/characters.md', name: 'Character Profiles' },
+        { path: 'phase4_outputs/worldbuilding.md', name: 'Worldbuilding' },
+        { path: 'phase3_outputs/call_sheet.md', name: 'Call Sheet' },
+        { path: 'phase2_outputs/series_outline.md', name: 'Series Outline' },
+        { path: 'phase1_outputs/style_sheet.md', name: 'Style Sheet' },
+        { path: 'phase1_outputs/context_bundle.md', name: 'Context Bundle' },
+      ];
+
+      const loaded: Artifact[] = [];
+      for (const spec of specs) {
+        try {
+          const res = await apiClient.getArtifact(projectId, spec.path);
+          loaded.push({
+            id: `core:${spec.path}`,
+            name: spec.name,
+            type: getArtifactType(spec.name),
+            content: res.content,
+            updatedAt: new Date(),
+            pinned: true,
+          });
+        } catch {
+          // best-effort
+        }
+      }
+
+      if (!cancelled) {
+        setCoreArtifacts(loaded);
+      }
+    };
+
+    loadCore();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  // Ensure a valid chapter is selected once chapters arrive
+  useEffect(() => {
+    if (!chaptersData || chaptersData.length === 0) return;
+    const exists = chaptersData.some((c) => c.number === selectedChapterNumber);
+    if (!exists) {
+      setSelectedChapterNumber(chaptersData[0].number);
+    }
+  }, [chaptersData, selectedChapterNumber]);
+
+  // Load the actual chapter artifacts for the selected chapter
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadChapterArtifacts = async () => {
+      if (!projectId) return;
+
+      setSceneBriefContent('');
+      setDraftContent('');
+      setImprovementPlanContent('');
+      setFinalContent('');
+
+      const chapterDir = `phase6_outputs/chapter_${selectedChapterNumber}`;
+
+      if (selectedChapterData?.hasSceneBrief) {
+        try {
+          const res = await apiClient.getArtifact(projectId, `${chapterDir}/scene_brief.md`);
+          if (!cancelled) setSceneBriefContent(res.content);
+        } catch {
+          // best-effort
+        }
+      }
+
+      if (selectedChapterData?.hasFirstDraft) {
+        try {
+          const res = await apiClient.getArtifact(projectId, `${chapterDir}/first_draft.md`);
+          if (!cancelled) setDraftContent(res.content);
+        } catch {
+          // best-effort
+        }
+      }
+
+      if (selectedChapterData?.hasFinal) {
+        try {
+          const res = await apiClient.getArtifact(projectId, `${chapterDir}/final.md`);
+          if (!cancelled) setFinalContent(res.content);
+        } catch {
+          // best-effort
+        }
+      }
+
+      try {
+        const res = await apiClient.getArtifact(projectId, `${chapterDir}/improvement_plan.md`);
+        if (!cancelled) setImprovementPlanContent(res.content);
+      } catch {
+        // best-effort
+      }
+    };
+
+    loadChapterArtifacts();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, selectedChapterNumber, selectedChapterData?.hasFinal, selectedChapterData?.hasFirstDraft, selectedChapterData?.hasSceneBrief]);
 
   // Convert backend chapter data to frontend format
   const chapters: Chapter[] = (chaptersData || []).map(ch => ({
@@ -73,19 +228,72 @@ export default function ChapterStudio() {
 
   const selectedChapter = chapters.find(c => c.number === selectedChapterNumber) || chapters[0];
 
-  // Convert artifact data
-  const artifacts = (artifactsData || []).map(art => ({
-    id: art.name,
-    name: art.name,
-    path: art.path,
-    type: 'other' as const,
-    phase: 'Phase 1',
-    size: `${Math.round(art.size / 1024)}KB`,
-    lastModified: new Date(art.updatedAt).toLocaleString(),
-    pinned: false,
-    content: '', // Content loaded on demand
-    updatedAt: new Date(art.updatedAt)
-  }));
+  const pinnedArtifacts: Artifact[] = useMemo(() => {
+    const fromSaved: Artifact[] = Object.entries(savedOutputs).map(([key, value]) => ({
+      id: key,
+      name: value.name,
+      type: getArtifactType(value.name),
+      content: value.content,
+      updatedAt: new Date(),
+      pinned: true,
+    }));
+
+    const merged = new Map<string, Artifact>();
+    for (const a of coreArtifacts) merged.set(a.id, a);
+    for (const a of fromSaved) merged.set(a.id, a);
+    return Array.from(merged.values());
+  }, [savedOutputs, coreArtifacts]);
+
+  if (!projectId) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="text-center">
+            <BookOpen className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <h2 className="text-xl font-semibold mb-2">Choose a Project</h2>
+            <p className="text-muted-foreground mb-4">Select a project to load its outline and chapters.</p>
+
+            {projectsLoading ? (
+              <p className="text-muted-foreground">Loading projects…</p>
+            ) : (
+              <div className="max-w-sm mx-auto text-left space-y-2">
+                <Label>Project</Label>
+                <Select
+                  value={projectId || undefined}
+                  onValueChange={(val) => setSearchParams({ projectId: val })}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(projects || []).map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (chaptersLoading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="text-center">
+            <BookOpen className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <h2 className="text-xl font-semibold mb-2">Loading Chapters…</h2>
+            <p className="text-muted-foreground">Fetching chapter outline and progress.</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   // Early return if no chapters available
   if (!selectedChapter) {
@@ -102,23 +310,12 @@ export default function ChapterStudio() {
     );
   }
 
-  // Mock content
   const chapterContent = {
-    sceneBrief: selectedChapter.sceneBrief === 'completed'
-      ? `# Scene Brief: ${selectedChapter.title}\n\n## Setting\nThe chapter opens in the great hall of Castle Thornwood, where torchlight flickers against ancient stone walls. The air is thick with tension...\n\n## Key Beats\n1. Elena discovers the hidden message\n2. Confrontation with the council\n3. The unexpected alliance offer\n\n## Emotional Arc\nAnxiety → Determination → Hope`
-      : '',
-    draft: selectedChapter.draft === 'completed' || selectedChapter.draft === 'in-progress'
-      ? `# Chapter ${selectedChapter.number}: ${selectedChapter.title}\n\nThe great doors of Castle Thornwood groaned as Elena pushed through them, her heart hammering against her ribs. The council had assembled without her knowledge—a breach of protocol that set her teeth on edge.\n\n"You weren't meant to be here," Lord Castellan said, his weathered face illuminated by candlelight. The others shifted uncomfortably in their high-backed chairs.\n\n"Yet here I am." Elena's voice didn't waver, though her hands trembled beneath her cloak. "Perhaps someone would like to explain why decisions about my kingdom are being made in shadows?"\n\nThe silence that followed was deafening...`
-      : '',
-    improvePlan: selectedChapter.improvePlan === 'completed'
-      ? `# Improvement Analysis\n\n## Strengths\n- Strong opening tension\n- Effective dialogue pacing\n- Good sensory details\n\n## Areas for Enhancement\n1. **Deepen Elena's internal conflict** - Add more internal monologue showing her fear\n2. **Expand council member descriptions** - Give at least 2 members distinct characteristics\n3. **Strengthen the hook** - End scene with a more dramatic revelation\n\n## Specific Suggestions\n- Paragraph 2: Add physical reaction (clenched fists, dry throat)\n- Paragraph 4: Include a telling detail about Lord Castellan's motivations`
-      : '',
-    final: selectedChapter.final === 'completed'
-      ? `# Chapter ${selectedChapter.number}: ${selectedChapter.title}\n\n[Final polished version with all improvements applied...]`
-      : '',
+    sceneBrief: sceneBriefContent,
+    draft: draftContent,
+    improvePlan: improvementPlanContent,
+    final: finalContent,
   };
-
-  const pinnedArtifacts = artifacts.filter(a => a.pinned);
 
   const handleRunStep = (step: string) => {
     setIsRunning(true);

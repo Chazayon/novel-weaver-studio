@@ -22,7 +22,7 @@ export interface ProjectResponse {
 
 export interface PhaseExecuteRequest {
     phase: number;
-    inputs: Record<string, any>;
+    inputs: Record<string, unknown>;
 }
 
 export interface WorkflowStatus {
@@ -31,7 +31,7 @@ export interface WorkflowStatus {
     status: 'not-started' | 'in-progress' | 'completed' | 'failed';
     progress: number;
     currentStep?: string;
-    outputs: Record<string, any>;
+    outputs: Record<string, unknown>;
     error?: string;
 }
 
@@ -39,7 +39,7 @@ export interface ArtifactInfo {
     name: string;
     path: string;
     size: number;
-    updatedAt: string;
+    modified: string;
 }
 
 export interface ArtifactContent {
@@ -53,7 +53,7 @@ export interface ArtifactUpdateRequest {
 
 export interface WorkflowSignal {
     signal_name: string;
-    args: Record<string, any>;
+    args: Record<string, unknown>;
 }
 
 export interface WorkflowHistory {
@@ -73,7 +73,7 @@ export interface PendingInput {
 }
 
 export interface HumanInputResponse {
-    inputs: Record<string, any>;
+    inputs: Record<string, unknown>;
 }
 
 export interface ChapterDetail {
@@ -84,6 +84,7 @@ export interface ChapterDetail {
     lastUpdated?: string;
     hasSceneBrief: boolean;
     hasFirstDraft: boolean;
+    hasImprovementPlan?: boolean;
     hasFinal: boolean;
 }
 

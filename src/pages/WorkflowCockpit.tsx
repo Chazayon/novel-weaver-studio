@@ -222,11 +222,11 @@ export default function WorkflowCockpit() {
       pinned: true,
     })),
     ...(artifactsData || []).map((a, idx) => ({
-      id: `backend-${idx}`,
+      id: `backend:${a.path}`,
       name: a.name,
       type: getArtifactType(a.name),
       content: '',
-      updatedAt: new Date(a.updatedAt),
+      updatedAt: new Date(a.modified),
       pinned: false,
     }))
   ];
@@ -517,7 +517,14 @@ export default function WorkflowCockpit() {
       'series_outline',
       'call_sheet',
       'character_profiles',
+      'characters',
       'worldbuilding',
+      'scene_brief',
+      'first_draft',
+      'improvement_plan',
+      'final_chapter',
+      'updated_context_bundle',
+      'final_manuscript',
       'result',
       'output',
       'content',
@@ -874,15 +881,40 @@ export default function WorkflowCockpit() {
     });
   };
 
-  const handleToggleSave = (artifact: Artifact) => {
+  const handleToggleSave = async (artifact: Artifact) => {
     if (artifact.pinned) {
       handleUnsaveOutput(artifact.id);
-    } else {
-      handleSaveOutput(artifact.id, artifact.name, artifact.content);
+      return;
     }
+
+    if (projectId && (!artifact.content || artifact.content.trim().length === 0) && artifact.id.startsWith('backend:')) {
+      try {
+        const artifactPath = artifact.id.slice('backend:'.length);
+        const res = await apiClient.getArtifact(projectId, artifactPath);
+        handleSaveOutput(artifact.id, artifact.name, res.content);
+        return;
+      } catch (e) {
+        console.warn('Could not fetch artifact content before saving:', e);
+      }
+    }
+
+    handleSaveOutput(artifact.id, artifact.name, artifact.content);
   };
 
-  const handleViewArtifact = (artifact: Artifact) => {
+  const handleViewArtifact = async (artifact: Artifact) => {
+    if (projectId && (!artifact.content || artifact.content.trim().length === 0) && artifact.id.startsWith('backend:')) {
+      try {
+        const artifactPath = artifact.id.slice('backend:'.length);
+        const res = await apiClient.getArtifact(projectId, artifactPath);
+        const withContent: Artifact = { ...artifact, content: res.content };
+        setViewingArtifact(withContent);
+        setIsArtifactViewOpen(true);
+        return;
+      } catch (e) {
+        console.warn('Could not fetch artifact content:', e);
+      }
+    }
+
     setViewingArtifact(artifact);
     setIsArtifactViewOpen(true);
   };
@@ -956,7 +988,17 @@ export default function WorkflowCockpit() {
               </div>
 
               {activePhase.id === 6 && (
-                <Button onClick={() => navigate('/chapter-studio')} size="sm" className="w-full sm:w-auto">
+                <Button
+                  onClick={() => {
+                    if (projectId) {
+                      navigate(`/chapter-studio?projectId=${projectId}`);
+                    } else {
+                      navigate('/chapter-studio');
+                    }
+                  }}
+                  size="sm"
+                  className="w-full sm:w-auto"
+                >
                   <FileText className="w-4 h-4" />
                   Open Chapter Studio
                 </Button>
@@ -1125,8 +1167,12 @@ export default function WorkflowCockpit() {
                 >
                   <ArtifactCard 
                     artifact={artifact}
-                    onOpen={() => handleViewArtifact(artifact)}
-                    onTogglePin={() => handleToggleSave(artifact)}
+                    onOpen={() => {
+                      void handleViewArtifact(artifact);
+                    }}
+                    onTogglePin={() => {
+                      void handleToggleSave(artifact);
+                    }}
                   />
                 </div>
               ))}
@@ -1158,8 +1204,12 @@ export default function WorkflowCockpit() {
                       key={artifact.id} 
                       artifact={artifact} 
                       compact
-                      onOpen={() => handleViewArtifact(artifact)}
-                      onTogglePin={() => handleToggleSave(artifact)}
+                      onOpen={() => {
+                        void handleViewArtifact(artifact);
+                      }}
+                      onTogglePin={() => {
+                        void handleToggleSave(artifact);
+                      }}
                     />
                   ))}
                 </div>
@@ -1177,8 +1227,12 @@ export default function WorkflowCockpit() {
                     key={artifact.id} 
                     artifact={artifact} 
                     compact
-                    onOpen={() => handleViewArtifact(artifact)}
-                    onTogglePin={() => handleToggleSave(artifact)}
+                    onOpen={() => {
+                      void handleViewArtifact(artifact);
+                    }}
+                    onTogglePin={() => {
+                      void handleToggleSave(artifact);
+                    }}
                   />
                 ))}
               </div>
@@ -1537,16 +1591,76 @@ export default function WorkflowCockpit() {
                       if (typeof obj.call_sheet === 'string') return { title: 'Call Sheet', content: obj.call_sheet };
                       // Phase 4: character_profiles or worldbuilding
                       if (typeof obj.character_profiles === 'string') return { title: 'Character Profiles', content: obj.character_profiles };
+                      if (typeof obj.characters === 'string') return { title: 'Character Profiles', content: obj.characters };
                       if (typeof obj.worldbuilding === 'string') return { title: 'Worldbuilding', content: obj.worldbuilding };
                       // Phase 5: outline (from Phase5Output)
                       if (typeof obj.outline === 'string') return { title: 'Chapter Outline', content: obj.outline };
                       if (typeof obj.chapter_outline === 'string') return { title: 'Chapter Outline', content: obj.chapter_outline };
+                      // Phase 6: final chapter
+                      if (typeof obj.final_chapter === 'string') return { title: 'Final Chapter', content: obj.final_chapter };
+                      // Phase 7: manuscript
+                      if (typeof obj.final_manuscript === 'string') return { title: 'Final Manuscript', content: obj.final_manuscript };
                       // Generic fields
                       if (typeof obj.result === 'string') return { title: 'Result', content: obj.result };
                       if (typeof obj.output === 'string') return { title: 'Output', content: obj.output };
                       if (typeof obj.content === 'string') return { title: 'Content', content: obj.content };
                       return null;
                     };
+
+                    if (parsedData && typeof parsedData === 'object') {
+                      const obj = parsedData as Record<string, unknown>;
+
+                      if (currentPhase === 4) {
+                        const sections = [
+                          { title: 'Character Profiles', content: typeof obj.character_profiles === 'string' ? obj.character_profiles : (typeof obj.characters === 'string' ? obj.characters : '') },
+                          { title: 'Worldbuilding', content: typeof obj.worldbuilding === 'string' ? obj.worldbuilding : '' },
+                        ].filter((s) => typeof s.content === 'string' && s.content.trim().length > 0);
+
+                        if (sections.length > 0) {
+                          return (
+                            <div className="space-y-6">
+                              {sections.map((s) => (
+                                <div key={s.title}>
+                                  <h4 className="text-sm font-medium mb-2">{s.title}</h4>
+                                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                                    <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg leading-relaxed">
+                                      {s.content}
+                                    </pre>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        }
+                      }
+
+                      if (currentPhase === 6) {
+                        const sections = [
+                          { title: 'Scene Brief', content: typeof obj.scene_brief === 'string' ? obj.scene_brief : '' },
+                          { title: 'First Draft', content: typeof obj.first_draft === 'string' ? obj.first_draft : '' },
+                          { title: 'Improvement Plan', content: typeof obj.improvement_plan === 'string' ? obj.improvement_plan : '' },
+                          { title: 'Final Chapter', content: typeof obj.final_chapter === 'string' ? obj.final_chapter : '' },
+                          { title: 'Updated Context Bundle', content: typeof obj.updated_context_bundle === 'string' ? obj.updated_context_bundle : '' },
+                        ].filter((s) => typeof s.content === 'string' && s.content.trim().length > 0);
+
+                        if (sections.length > 0) {
+                          return (
+                            <div className="space-y-6">
+                              {sections.map((s) => (
+                                <div key={s.title}>
+                                  <h4 className="text-sm font-medium mb-2">{s.title}</h4>
+                                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                                    <pre className="whitespace-pre-wrap text-sm bg-muted/30 p-4 rounded-lg leading-relaxed">
+                                      {s.content}
+                                    </pre>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        }
+                      }
+                    }
 
                     const extracted = extractContent(parsedData);
 
@@ -1625,7 +1739,7 @@ export default function WorkflowCockpit() {
                       
                       if (parsedData && typeof parsedData === 'object') {
                         const obj = parsedData as Record<string, unknown>;
-                        
+
                         if (typeof obj.series_outline === 'string') {
                           content = obj.series_outline;
                           outputName = 'Series Outline';
@@ -1634,6 +1748,9 @@ export default function WorkflowCockpit() {
                           outputName = 'Call Sheet';
                         } else if (typeof obj.character_profiles === 'string') {
                           content = obj.character_profiles;
+                          outputName = 'Character Profiles';
+                        } else if (typeof obj.characters === 'string') {
+                          content = obj.characters;
                           outputName = 'Character Profiles';
                         } else if (typeof obj.worldbuilding === 'string') {
                           content = obj.worldbuilding;
@@ -1644,10 +1761,30 @@ export default function WorkflowCockpit() {
                         } else if (typeof obj.chapter_outline === 'string') {
                           content = obj.chapter_outline;
                           outputName = 'Chapter Outline';
+                        } else if (typeof obj.scene_brief === 'string') {
+                          content = obj.scene_brief;
+                          outputName = 'Scene Brief';
+                        } else if (typeof obj.first_draft === 'string') {
+                          content = obj.first_draft;
+                          outputName = 'First Draft';
+                        } else if (typeof obj.improvement_plan === 'string') {
+                          content = obj.improvement_plan;
+                          outputName = 'Improvement Plan';
+                        } else if (typeof obj.final_chapter === 'string') {
+                          content = obj.final_chapter;
+                          outputName = 'Final Chapter';
+                        } else if (typeof obj.updated_context_bundle === 'string') {
+                          content = obj.updated_context_bundle;
+                          outputName = 'Updated Context Bundle';
+                        } else if (typeof obj.final_manuscript === 'string') {
+                          content = obj.final_manuscript;
+                          outputName = 'Final Manuscript';
                         } else if (typeof obj.result === 'string') {
                           content = obj.result;
                         } else if (typeof obj.output === 'string') {
                           content = obj.output;
+                        } else if (typeof obj.content === 'string') {
+                          content = obj.content;
                         }
                       } else if (typeof parsedData === 'string') {
                         content = parsedData;

@@ -870,7 +870,7 @@ async def get_project_progress(project_id: str):
     try:
         manifest = storage_manager.get_project_manifest(project_id)
         state = manifest.get("state", {})
-        chapters_data = manifest.get("chapters", [])
+        chapters_data = state.get("chapters", [])
         
         # Calculate phase progress
         phases_completed = state.get("phases_completed", [])

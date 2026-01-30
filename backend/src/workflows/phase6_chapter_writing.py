@@ -36,6 +36,7 @@ class Phase6Output:
     """Output from Phase 6 workflow."""
     scene_brief: str
     first_draft: str
+    improvement_plan: str
     final_chapter: str
     updated_context_bundle: str
     status: str
@@ -214,6 +215,13 @@ Output as Markdown:
             start_to_close_timeout=workflow.timedelta(minutes=5),
             retry_policy=RetryPolicy(maximum_attempts=3),
         )
+
+        # Save improvement plan
+        await workflow.execute_activity(
+            save_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/improvement_plan.md", improvement_plan],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+        )
         
         # Step 6: Get improvement path decision and implement
         final_chapter = await self._process_improvements(
@@ -307,6 +315,7 @@ Return the FULL updated Context Bundle in Markdown.
         return Phase6Output(
             scene_brief=scene_brief,
             first_draft=first_draft,
+            improvement_plan=improvement_plan,
             final_chapter=final_chapter,
             updated_context_bundle=updated_context_bundle,
             status="completed",
