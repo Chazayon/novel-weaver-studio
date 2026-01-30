@@ -1,0 +1,24 @@
+# Temporal UI Access Guide
+
+The Temporal UI provides a visual interface to monitor and debug your workflows.
+
+## Quick Access Link
+**[Click here to open Temporal UI](http://localhost:8233)**
+
+## How to Access
+1.  Ensure your Docker containers are running.
+    *   Run `docker-compose up -d` in your terminal if they are not.
+2.  Open your web browser.
+3.  Go to `http://localhost:8233`.
+
+## What You Can Do in the UI
+*   **View Workflows**: See a list of all running, completed, and failed workflows.
+*   **Inspect History**: Click on a workflow ID to see the detailed event history (activity scheduling, task completion, etc.).
+*   **Debug Failures**: View stack traces and error messages for failed workflows.
+*   **Terminate/Cancel**: You can manually terminate or cancel running workflows from the interface.
+
+## Troubleshooting
+*   **"Site can't be reached"**:
+    *   Check if the container is running: `docker-compose ps`.
+    *   Ensure port `8233` is not blocked or used by another application.
+    *   Restart the containers: `docker-compose restart temporal-ui`.
