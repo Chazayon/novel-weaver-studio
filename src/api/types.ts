@@ -70,6 +70,8 @@ export interface PendingInput {
     prompt: string;
     inputType: string;
     currentContent?: string;
+    expectedOutputs?: string[];
+    requestedAt?: string;
 }
 
 export interface HumanInputResponse {

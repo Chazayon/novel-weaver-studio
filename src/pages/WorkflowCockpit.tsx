@@ -95,6 +95,7 @@ export default function WorkflowCockpit() {
   const [completionData, setCompletionData] = useState<PhaseCompletionData | null>(null);
   const [reviewContent, setReviewContent] = useState<string>('');
   const [reviewDescription, setReviewDescription] = useState<string>('');
+  const [reviewExpectedOutputs, setReviewExpectedOutputs] = useState<string[]>([]);
   const [phase1FormData, setPhase1FormData] = useState({
     genre: '',
     book_title: '',
@@ -161,6 +162,7 @@ export default function WorkflowCockpit() {
       
       setReviewContent(formattedContent);
       setReviewDescription(currentPending.prompt || 'Please review and provide your decision.');
+      setReviewExpectedOutputs(currentPending.expectedOutputs || []);
       setIsReviewDialogOpen(true);
     }
   }, [pendingInputs, currentPhase, currentWorkflowId, isReviewDialogOpen]);
@@ -301,6 +303,7 @@ export default function WorkflowCockpit() {
     setIsCompletionDialogOpen,
     setReviewContent,
     setReviewDescription,
+    setReviewExpectedOutputs,
     setIsReviewDialogOpen,
     setRunningPhases,
     setWorkflowId: setCurrentWorkflowId,
@@ -621,65 +624,24 @@ export default function WorkflowCockpit() {
     }
   };
 
-  // Handle review approval/rejection
-  const handleApproveReview = async () => {
+  const handleSubmitReview = async (inputs: Record<string, string>) => {
     if (!currentWorkflowId) return;
 
     try {
-      // Respond with APPROVE decision
       await apiClient.respondToWorkflow(currentWorkflowId, {
-        inputs: { decision: 'APPROVE' }
+        inputs,
       });
 
       setIsReviewDialogOpen(false);
       toast({
-        title: 'Review approved',
-        description: 'Workflow will continue with approved content.',
+        title: 'Response submitted',
+        description: 'Workflow will continue.',
       });
 
       // Refetch to update UI
       await refetchProgress();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to approve review';
-      toast({
-        title: 'Error',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const handleRejectReview = async () => {
-    if (!currentWorkflowId) return;
-
-    // Get revision notes from user
-    const revisionNotes = prompt('Please provide revision notes (what needs to be changed):');
-    if (!revisionNotes) return; // User cancelled
-
-    try {
-      // First, respond with REVISE decision
-      await apiClient.respondToWorkflow(currentWorkflowId, {
-        inputs: { decision: 'REVISE' }
-      });
-
-      // Wait a moment for the workflow to process and request revision notes
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Then provide the revision notes
-      await apiClient.respondToWorkflow(currentWorkflowId, {
-        inputs: { revision_notes: revisionNotes }
-      });
-
-      setIsReviewDialogOpen(false);
-      toast({
-        title: 'Revision requested',
-        description: 'Workflow will revise the content based on your notes.',
-      });
-
-      // Refetch to update UI
-      await refetchProgress();
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to request revision';
+      const errorMessage = error instanceof Error ? error.message : 'Failed to submit response';
       toast({
         title: 'Error',
         description: errorMessage,
@@ -949,8 +911,8 @@ export default function WorkflowCockpit() {
         onOpenChange={setIsReviewDialogOpen}
         content={reviewContent}
         description={reviewDescription}
-        onReject={handleRejectReview}
-        onApprove={handleApproveReview}
+        expectedOutputs={reviewExpectedOutputs}
+        onSubmit={handleSubmitReview}
       />
 
       {/* Completion Dialog */}

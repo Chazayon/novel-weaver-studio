@@ -467,10 +467,21 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                     # If waiting for review, get content
                     if current_status == "waiting_for_review":
                         content = await handle.query("get_pending_content")
+                        description = None
+                        expected_outputs = None
+                        try:
+                            description = await handle.query("get_pending_description")
+                        except Exception:
+                            description = None
+                        try:
+                            expected_outputs = await handle.query("get_pending_expected_outputs")
+                        except Exception:
+                            expected_outputs = None
                         if content:
                             outputs["pending_review"] = {
                                 "content": content,
-                                "description": "Please review the generated Context Bundle."
+                                "description": description or "Please review the generated content.",
+                                "expectedOutputs": expected_outputs or [],
                             }
                             
                     # Map status to progress
@@ -639,15 +650,83 @@ async def get_workflow_history(workflow_id: str):
 async def list_pending_inputs(project_id: str):
     """List all workflows awaiting human input for a project."""
     try:
+        import re
+        from datetime import datetime
+
         from ..workflows.client import get_temporal_client
-        
-        # This is a simplified implementation
-        # In production, you'd query Temporal for workflows in a specific state
-        # For now, we'll return an empty list and implement this when we have
-        # a proper workflow tracking system
-        
-        # TODO: Implement proper workflow query
-        return []
+
+        client = await get_temporal_client()
+
+        result: list[PendingInput] = []
+
+        list_fn = getattr(client, "list_workflows", None)
+        if not callable(list_fn):
+            return []
+
+        try:
+            workflow_iter = list_fn(f"ExecutionStatus='Running' AND WorkflowId CONTAINS '{project_id}'")
+        except Exception:
+            workflow_iter = list_fn(f"WorkflowId CONTAINS '{project_id}'")
+
+        async for wf in workflow_iter:
+            workflow_id = (
+                getattr(wf, "id", None)
+                or getattr(wf, "workflow_id", None)
+                or getattr(wf, "workflowId", None)
+            )
+            if not workflow_id or not isinstance(workflow_id, str):
+                continue
+
+            match = re.match(r"^phase(\d+)-", workflow_id)
+            phase_num = int(match.group(1)) if match else 1
+
+            handle = client.get_workflow_handle(workflow_id)
+            try:
+                current_status = await handle.query("get_current_status")
+            except Exception:
+                continue
+
+            if current_status != "waiting_for_review":
+                continue
+
+            prompt = "Please review the generated content."
+            current_content = None
+            expected_outputs = None
+
+            try:
+                maybe_prompt = await handle.query("get_pending_description")
+                if isinstance(maybe_prompt, str) and maybe_prompt.strip():
+                    prompt = maybe_prompt
+            except Exception:
+                pass
+
+            try:
+                maybe_content = await handle.query("get_pending_content")
+                if isinstance(maybe_content, str) and maybe_content.strip():
+                    current_content = maybe_content
+            except Exception:
+                pass
+
+            try:
+                maybe_expected_outputs = await handle.query("get_pending_expected_outputs")
+                if isinstance(maybe_expected_outputs, list):
+                    expected_outputs = [str(x) for x in maybe_expected_outputs]
+            except Exception:
+                pass
+
+            result.append(
+                PendingInput(
+                    workflowId=workflow_id,
+                    phase=phase_num,
+                    prompt=prompt,
+                    inputType="review",
+                    currentContent=current_content,
+                    expectedOutputs=expected_outputs,
+                    requestedAt=datetime.utcnow().isoformat(),
+                )
+            )
+
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list pending inputs: {str(e)}")
 
@@ -673,6 +752,10 @@ async def respond_to_workflow(workflow_id: str, response: HumanInputResponse):
                 decision = response.inputs.get("decision", "")
                 notes = response.inputs.get("revision_notes", "")
                 await handle.signal("provide_context_approval", decision, notes)
+            elif "revision_notes" in response.inputs:
+                # Support workflows that submit notes separately after a REVISE decision
+                notes = response.inputs.get("revision_notes", "")
+                await handle.signal("provide_context_approval", "REVISE", notes)
             else:
                 # Generic fallback
                 await handle.signal("provide_user_input", response.inputs)

@@ -4,6 +4,7 @@ import { apiClient } from '@/api/client';
 interface PendingReview {
   content?: string;
   description?: string;
+  expectedOutputs?: string[];
 }
 
 interface UseWorkflowPollingArgs<TOutputs> {
@@ -17,6 +18,7 @@ interface UseWorkflowPollingArgs<TOutputs> {
 
   setReviewContent: (content: string) => void;
   setReviewDescription: (description: string) => void;
+  setReviewExpectedOutputs?: (expectedOutputs: string[]) => void;
   setIsReviewDialogOpen: (open: boolean) => void;
 
   setRunningPhases: (updater: (prev: Set<number>) => Set<number>) => void;
@@ -34,6 +36,7 @@ export function useWorkflowPolling<TOutputs>({
   setIsCompletionDialogOpen,
   setReviewContent,
   setReviewDescription,
+  setReviewExpectedOutputs,
   setIsReviewDialogOpen,
   setRunningPhases,
   setWorkflowId,
@@ -87,6 +90,7 @@ export function useWorkflowPolling<TOutputs>({
         if (pendingReview) {
           setReviewContent(pendingReview.content || '');
           setReviewDescription(pendingReview.description || '');
+          setReviewExpectedOutputs?.(pendingReview.expectedOutputs || []);
           setIsReviewDialogOpen(true);
         }
       } catch (error) {

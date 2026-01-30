@@ -5,6 +5,7 @@ Converts: Novel_Writing/Phase06_Single_Chapter_Writing.yaml
 """
 
 from dataclasses import dataclass
+from typing import Any, Dict
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
@@ -59,6 +60,80 @@ class Phase6SingleChapterWorkflow:
     9. Update context bundle with final chapter
     10. Save all artifacts and update manifest
     """
+
+    def __init__(self) -> None:
+        self._current_status: str = "starting"
+        self._pending_content: str | None = None
+        self._pending_description: str | None = None
+        self._pending_expected_outputs: list[str] = []
+        self._human_inputs: list[Dict[str, Any]] = []
+
+    @workflow.query
+    def get_current_status(self) -> str:
+        return self._current_status
+
+    @workflow.query
+    def get_pending_content(self) -> str | None:
+        return self._pending_content
+
+    @workflow.query
+    def get_pending_description(self) -> str | None:
+        return self._pending_description
+
+    @workflow.query
+    def get_pending_expected_outputs(self) -> list[str]:
+        return self._pending_expected_outputs
+
+    @workflow.signal
+    async def human_input_received(self, inputs: Dict[str, Any]) -> None:
+        self._human_inputs.append(inputs)
+
+    async def _await_human_input(
+        self,
+        description: str,
+        expected_outputs: list[str],
+        pending_content: str | None = None,
+    ) -> Dict[str, Any]:
+        self._current_status = "waiting_for_review"
+        self._pending_description = description
+        self._pending_content = pending_content if pending_content is not None else description
+        self._pending_expected_outputs = expected_outputs
+
+        await workflow.execute_activity(
+            human_input_activity,
+            args=[description, expected_outputs],
+            start_to_close_timeout=workflow.timedelta(minutes=2),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+
+        await workflow.wait_condition(
+            lambda: any(
+                any(k in item for k in expected_outputs)
+                for item in self._human_inputs
+            ),
+            timeout=workflow.timedelta(hours=24),
+        )
+
+        match_index = next(
+            (
+                idx
+                for idx, item in enumerate(self._human_inputs)
+                if any(k in item for k in expected_outputs)
+            ),
+            -1,
+        )
+
+        received = self._human_inputs.pop(match_index)
+        extra = {k: v for k, v in received.items() if k not in expected_outputs}
+        if extra:
+            self._human_inputs.insert(0, extra)
+
+        self._pending_description = None
+        self._pending_content = None
+        self._pending_expected_outputs = []
+        self._current_status = "running"
+
+        return received
     
     @workflow.run
     async def run(self, input: Phase6Input) -> Phase6Output:
@@ -369,11 +444,7 @@ Output only the revised chapter in Markdown with the same heading.""",
             
             return revised_draft
         
-        # Human decision: APPLY / CUSTOM / SKIP
-        decision = await workflow.execute_activity(
-            human_input_activity,
-            args=[
-                f"""## Improvement Plan
+        decision_prompt = f"""## Improvement Plan
 
 {improvement_plan}
 
@@ -384,11 +455,12 @@ Output only the revised chapter in Markdown with the same heading.""",
 Type:
 - **APPLY** to implement it as-is
 - **CUSTOM** to add your own instructions first
-- **SKIP** to keep the first draft as final""",
-                ["decision"],
-            ],
-            start_to_close_timeout=workflow.timedelta(hours=24),
-            retry_policy=RetryPolicy(maximum_attempts=1),
+- **SKIP** to keep the first draft as final"""
+
+        decision = await self._await_human_input(
+            description="Improvement Plan",
+            expected_outputs=["decision"],
+            pending_content=decision_prompt,
         )
         
         decision_text = decision.get("decision", "").strip().upper()
@@ -401,17 +473,12 @@ Type:
         if "CUSTOM" in decision_text:
             workflow.logger.info("User chose CUSTOM - collecting custom notes")
             
-            # Collect custom notes
-            custom_input = await workflow.execute_activity(
-                human_input_activity,
-                args=[
-                    """## Custom Instructions
+            custom_input = await self._await_human_input(
+                description="Custom Instructions",
+                expected_outputs=["custom_notes"],
+                pending_content="""## Custom Instructions
 
 Add your custom instructions (what to emphasize, what to ignore, tone shifts, etc.).""",
-                    ["custom_notes"],
-                ],
-                start_to_close_timeout=workflow.timedelta(hours=24),
-                retry_policy=RetryPolicy(maximum_attempts=1),
             )
             
             custom_notes = custom_input.get("custom_notes", "")
@@ -504,11 +571,7 @@ Output only the revised chapter in Markdown with the same heading.""",
         for revision_count in range(max_revisions):
             workflow.logger.info(f"Requesting final review (attempt {revision_count + 1})")
             
-            # Request approval or revision
-            decision = await workflow.execute_activity(
-                human_input_activity,
-                args=[
-                    f"""## Final Chapter Review
+            decision_prompt = f"""## Final Chapter Review
 
 {final_chapter}
 
@@ -516,11 +579,12 @@ Output only the revised chapter in Markdown with the same heading.""",
 
 **Review the FINAL chapter text.**
 
-Type **APPROVE** to lock it in, or type **REVISE** to provide notes and generate one more pass.""",
-                    ["decision"],
-                ],
-                start_to_close_timeout=workflow.timedelta(hours=24),
-                retry_policy=RetryPolicy(maximum_attempts=1),
+Type **APPROVE** to lock it in, or type **REVISE** to provide notes and generate one more pass."""
+
+            decision = await self._await_human_input(
+                description="Final Chapter Review",
+                expected_outputs=["decision"],
+                pending_content=decision_prompt,
             )
             
             # Check decision
@@ -533,17 +597,12 @@ Type **APPROVE** to lock it in, or type **REVISE** to provide notes and generate
             if "REVISE" in decision_text:
                 workflow.logger.info("Final revision requested")
                 
-                # Collect revision notes
-                revision_input = await workflow.execute_activity(
-                    human_input_activity,
-                    args=[
-                        """## Final Revision Notes
+                revision_input = await self._await_human_input(
+                    description="Final Revision Notes",
+                    expected_outputs=["revision_notes"],
+                    pending_content="""## Final Revision Notes
 
 Paste your final revision notes (bullets are best). The agent will revise the FINAL chapter accordingly.""",
-                        ["revision_notes"],
-                    ],
-                    start_to_close_timeout=workflow.timedelta(hours=24),
-                    retry_policy=RetryPolicy(maximum_attempts=1),
                 )
                 
                 revision_notes = revision_input.get("revision_notes", "")

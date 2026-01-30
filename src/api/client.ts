@@ -23,6 +23,17 @@ import {
 // API Client Configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
+type FastApiValidationError = {
+    loc?: Array<string | number>;
+    msg?: string;
+};
+
+type FastApiErrorBody = {
+    detail?: unknown;
+};
+
+type EnhancedError = Error & { response?: unknown };
+
 class NovelWeaverClient {
     private client: AxiosInstance;
 
@@ -45,15 +56,16 @@ class NovelWeaverClient {
 
                 if (error.response) {
                     // Server responded with error status
-                    const data = error.response.data as any;
+                    const data = error.response.data as FastApiErrorBody;
                     let message = 'An error occurred';
 
                     if (data?.detail) {
                         if (Array.isArray(data.detail)) {
                             // FastAPI validation errors
-                            message = data.detail.map((err: any) =>
-                                `${err.loc?.join('.') || 'field'}: ${err.msg}`
-                            ).join('; ');
+                            const errs = data.detail as FastApiValidationError[];
+                            message = errs
+                                .map((err) => `${err.loc?.join('.') || 'field'}: ${err.msg || 'invalid'}`)
+                                .join('; ');
                         } else if (typeof data.detail === 'string') {
                             message = data.detail;
                         } else {
@@ -62,7 +74,7 @@ class NovelWeaverClient {
                     }
 
                     const enhancedError = new Error(message);
-                    (enhancedError as any).response = error.response;
+                    (enhancedError as EnhancedError).response = error.response;
                     throw enhancedError;
                 } else if (error.request) {
                     // Request made but no response

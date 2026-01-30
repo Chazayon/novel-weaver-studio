@@ -236,7 +236,7 @@ export function useRespondToWorkflow() {
             inputs,
         }: {
             workflowId: string;
-            inputs: Record<string, any>;
+            inputs: Record<string, unknown>;
         }) => apiClient.respondToWorkflow(workflowId, { inputs }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['projects'] });

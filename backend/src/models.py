@@ -106,9 +106,11 @@ class PendingInput(BaseModel):
     """Information about a pending human input request."""
     workflow_id: str = Field(alias="workflowId")
     phase: int
-    description: str
-    expected_outputs: List[str] = Field(alias="expectedOutputs")
-    requested_at: str = Field(alias="requestedAt")
+    prompt: str
+    input_type: str = Field(alias="inputType")
+    current_content: Optional[str] = Field(default=None, alias="currentContent")
+    expected_outputs: Optional[List[str]] = Field(default=None, alias="expectedOutputs")
+    requested_at: Optional[str] = Field(default=None, alias="requestedAt")
     
     class Config:
         populate_by_name = True
