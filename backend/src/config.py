@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     default_llm_provider: str = Field(default="openai", alias="DEFAULT_LLM_PROVIDER")
     default_llm_model: str = Field(default="gpt-4o", alias="DEFAULT_LLM_MODEL")
 
+    # Backup LLM Provider
+    backup_llm_provider: str | None = Field(default=None, alias="BACKUP_LLM_PROVIDER")
+    backup_llm_model: str | None = Field(default=None, alias="BACKUP_LLM_MODEL")
+
     # CORS Configuration
     cors_origins: str = Field(
         default="http://localhost:5173,http://localhost:8080",
