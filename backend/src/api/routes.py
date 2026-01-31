@@ -394,30 +394,76 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
         
         elif phase == 5:
             from ..workflows.phase5_chapter_outline import Phase5ChapterOutlineWorkflow, Phase5Input
-            
-            workflow_input = Phase5Input(
-                project_id=project_id,
-                outline_template=request.inputs.get("outline_template", "USE_BUNDLE"),
-                auto_approve=request.inputs.get("auto_approve", False),
+            from ..workflows.phase5_context_bundle_curation import (
+                Phase5ContextBundleCurationWorkflow,
+                Phase5ContextBundleCurationInput,
+                Phase5ContextBundleTagsWorkflow,
+                Phase5ContextBundleTagsInput,
             )
-            
-            workflow_id = f"phase5-{project_id}-{uuid.uuid4()}"
-            
-            handle = await client.start_workflow(
-                Phase5ChapterOutlineWorkflow.run,
-                workflow_input,
-                id=workflow_id,
-                task_queue=settings.temporal_task_queue,
-                execution_timeout=timedelta(hours=1),
-                run_timeout=timedelta(hours=1),
-            )
-            
+
+            step_raw = request.inputs.get("step")
+            step = str(step_raw).strip().lower() if step_raw is not None else ""
+            step = step.replace("_", "-")
+
+            step_workflow = None
+            step_label = None
+            workflow_input = None
+            timeout_hours = 1
+
+            if step in {"curate-context-bundle", "context-bundle-curation", "context-bundle", "phase5-0"}:
+                step_workflow = Phase5ContextBundleCurationWorkflow.run
+                step_label = "context-bundle-curation"
+                workflow_input = Phase5ContextBundleCurationInput(
+                    project_id=project_id,
+                    extra_notes=request.inputs.get("extra_notes"),
+                )
+                timeout_hours = 1
+            elif step in {"context-tags", "generate-context-tags", "context-bundle-tags", "tags"}:
+                step_workflow = Phase5ContextBundleTagsWorkflow.run
+                step_label = "context-tags"
+                workflow_input = Phase5ContextBundleTagsInput(project_id=project_id)
+                timeout_hours = 1
+            else:
+                workflow_input = Phase5Input(
+                    project_id=project_id,
+                    outline_template=request.inputs.get("outline_template", "USE_BUNDLE"),
+                    auto_approve=request.inputs.get("auto_approve", False),
+                )
+
+            if step_workflow is None:
+                workflow_id = f"phase5-{project_id}-{uuid.uuid4()}"
+                await client.start_workflow(
+                    Phase5ChapterOutlineWorkflow.run,
+                    workflow_input,
+                    id=workflow_id,
+                    task_queue=settings.temporal_task_queue,
+                    execution_timeout=timedelta(hours=timeout_hours),
+                    run_timeout=timedelta(hours=timeout_hours),
+                )
+                current_step = "Starting Phase 5: Chapter Outline Creation"
+            else:
+                workflow_id = f"phase5-{project_id}-{step_label}-{uuid.uuid4()}"
+                await client.start_workflow(
+                    step_workflow,
+                    workflow_input,
+                    id=workflow_id,
+                    task_queue=settings.temporal_task_queue,
+                    execution_timeout=timedelta(hours=timeout_hours),
+                    run_timeout=timedelta(hours=timeout_hours),
+                )
+                if step_label == "context-bundle-curation":
+                    current_step = "Starting Phase 5.0: Context Bundle Curation"
+                elif step_label == "context-tags":
+                    current_step = "Starting Phase 5.0: Context Bundle Tags"
+                else:
+                    current_step = "Starting Phase 5"
+
             return WorkflowStatus(
                 workflowId=workflow_id,
                 phase=phase,
                 status=PhaseStatus.IN_PROGRESS,
                 progress=0.0,
-                currentStep="Starting Phase 5: Chapter Outline Creation",
+                currentStep=current_step,
                 outputs={},
             )
         
@@ -578,8 +624,10 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                             # It's a dataclass - convert to dict
                             from dataclasses import asdict
                             outputs = asdict(result)
+                        elif isinstance(result, dict):
+                            outputs = result
                         else:
-                            outputs = {"result": str(result)}
+                            outputs = {"result": result if isinstance(result, (str, int, float, bool, list)) else str(result)}
                         
                         # For Phase 1, fetch the generated artifacts
                         if phase == 1:
@@ -661,6 +709,14 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                         "generating_context_bundle": 70,
                         "waiting_for_review": 90,
                         "revising": 80,
+                        "loading_sources": 15,
+                        "loading_context_bundle": 20,
+                        "curating_context_bundle": 70,
+                        "saving_context_bundle": 85,
+                        "generating_tags": 70,
+                        "validating_tags": 80,
+                        "saving_tags": 90,
+                        "completed": 100,
                     }
                     
                     return WorkflowStatus(

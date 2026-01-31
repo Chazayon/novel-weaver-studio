@@ -110,6 +110,8 @@ export default function WorkflowCockpit() {
   const [phaseInputs, setPhaseInputs] = useState<PhaseInputs>({});
   const [workflowStartTimes, setWorkflowStartTimes] = useState<Record<number, number>>({});
   const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
+  const [currentWorkflowPhase, setCurrentWorkflowPhase] = useState<number | null>(null);
+  const [completionPhase, setCompletionPhase] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [activeTab, setActiveTab] = useState<'genre_tropes' | 'style_sheet' | 'context_bundle'>('genre_tropes');
   // Typed helper for chapters
@@ -352,17 +354,23 @@ export default function WorkflowCockpit() {
 
   useWorkflowPolling<PhaseCompletionData>({
     projectId,
-    phase: currentPhase,
+    phase: currentWorkflowPhase ?? currentPhase,
     workflowId: currentWorkflowId,
     refetchProgress,
-    setCompletionData: (data) => setCompletionData(data),
+    setCompletionData: (data) => {
+      setCompletionData(data);
+      setCompletionPhase(currentWorkflowPhase ?? currentPhase);
+    },
     setIsCompletionDialogOpen,
     setReviewContent,
     setReviewDescription,
     setReviewExpectedOutputs,
     setIsReviewDialogOpen,
     setRunningPhases,
-    setWorkflowId: setCurrentWorkflowId,
+    setWorkflowId: (workflowId) => {
+      setCurrentWorkflowId(workflowId);
+      if (!workflowId) setCurrentWorkflowPhase(null);
+    },
     setPhaseOutputsAndPersist,
   });
 
@@ -565,8 +573,10 @@ export default function WorkflowCockpit() {
       }
       // For Phase 2+, check if previous phase has outputs
       else if (phaseNum > 1) {
+        const prevPhaseStatus = progressData?.phases?.find((p) => p.phase === phaseNum - 1)?.status;
         const prevPhaseOutput = phaseOutputs[phaseNum - 1];
-        if (!prevPhaseOutput) {
+        const prevCompleted = prevPhaseStatus === 'completed';
+        if (!prevCompleted && !prevPhaseOutput) {
           toast({
             title: 'Missing Prerequisites',
             description: `Phase ${phaseNum - 1} must be completed before running Phase ${phaseNum}.`,
@@ -595,6 +605,8 @@ export default function WorkflowCockpit() {
       });
 
       setCurrentWorkflowId(result.workflowId);
+      setCurrentWorkflowPhase(phaseNum);
+      setCompletionPhase(null);
 
       console.log('Phase execution result:', result);
 
@@ -979,7 +991,7 @@ export default function WorkflowCockpit() {
       <PhaseCompletionDialog
         open={isCompletionDialogOpen}
         onOpenChange={setIsCompletionDialogOpen}
-        currentPhase={currentPhase}
+        currentPhase={completionPhase ?? currentPhase}
         completionData={completionData}
         activeTab={activeTab}
         onTabChange={setActiveTab}

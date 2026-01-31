@@ -218,17 +218,52 @@ def novel_parse_outline(project_id: str) -> Dict[str, Any]:
     
     content = outline_path.read_text(encoding="utf-8")
     
+    chapters: list[dict[str, Any]] = []
+
     # Parse chapter headers (### Chapter X: Title)
-    chapter_pattern = re.compile(r"^###\s+Chapter\s+(\d+):\s*(.+)$", re.MULTILINE)
+    # Also accept common separators like '-', '–', '—'
+    chapter_pattern = re.compile(r"^###\s+Chapter\s+(\d+)\s*[:\-–—]\s*(.+)$", re.MULTILINE)
     matches = chapter_pattern.findall(content)
-    
-    chapters = []
+
     for chapter_num_str, title in matches:
         chapter_num = int(chapter_num_str)
         chapters.append({
             "number": chapter_num,
             "title": title.strip(),
         })
+
+    # Fallback: parse markdown table rows like: | **1** | **The Title** | Summary... |
+    if not chapters:
+        table_row_pattern = re.compile(r"^\|\s*\*{0,2}(\d+)\*{0,2}\s*\|\s*\*{0,2}([^|]+?)\*{0,2}\s*\|", re.MULTILINE)
+        table_matches = table_row_pattern.findall(content)
+        for chapter_num_str, title in table_matches:
+            try:
+                chapter_num = int(chapter_num_str)
+            except ValueError:
+                continue
+
+            cleaned_title = title.strip()
+            cleaned_title = re.sub(r"^\*+", "", cleaned_title)
+            cleaned_title = re.sub(r"\*+$", "", cleaned_title)
+            cleaned_title = cleaned_title.strip()
+
+            chapters.append({
+                "number": chapter_num,
+                "title": cleaned_title,
+            })
+
+    # If numbering restarts per book/part (duplicates or non-monotonic numbers),
+    # renumber sequentially in the order encountered.
+    if chapters:
+        nums = [ch.get("number") for ch in chapters]
+        int_nums = [n for n in nums if isinstance(n, int)]
+
+        has_duplicate_numbers = len(set(int_nums)) != len(int_nums)
+        is_monotonic_non_decreasing = int_nums == sorted(int_nums)
+
+        if has_duplicate_numbers or not is_monotonic_non_decreasing:
+            for idx, ch in enumerate(chapters):
+                ch["number"] = idx + 1
     
     # Also update the manifest with total chapter count
     if chapters:

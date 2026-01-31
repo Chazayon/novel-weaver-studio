@@ -10,6 +10,7 @@ import PhaseEditor from "./pages/PhaseEditor";
 import CompileExport from "./pages/CompileExport";
 import LLMSettings from "./pages/LLMSettings";
 import Phase6Wizard from "./pages/Phase6Wizard";
+import Phase5ContextBundleWizard from "./pages/Phase5ContextBundleWizard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/phase-editor/:phaseId" element={<PhaseEditor />} />
           <Route path="/compile" element={<CompileExport />} />
           <Route path="/llm-settings" element={<LLMSettings />} />
+          <Route path="/phase5-context" element={<Phase5ContextBundleWizard />} />
           <Route path="/phase6-wizard" element={<Phase6Wizard />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

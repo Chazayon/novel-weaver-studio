@@ -2,6 +2,47 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { ChevronRight, Pin } from 'lucide-react';
+import { useEffect } from 'react';
+
+let sharedAudioContext: AudioContext | null = null;
+
+function getAudioContextCtor(): typeof AudioContext | undefined {
+  return window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+}
+
+function getSharedAudioContext(): AudioContext | null {
+  const ctor = getAudioContextCtor();
+  if (!ctor) return null;
+  if (!sharedAudioContext) sharedAudioContext = new ctor();
+  return sharedAudioContext;
+}
+
+async function unlockSharedAudioContext(): Promise<AudioContext | null> {
+  const ctx = getSharedAudioContext();
+  if (!ctx) return null;
+  if (ctx.state === 'suspended') {
+    try {
+      await ctx.resume();
+    } catch {
+      return ctx;
+    }
+  }
+  return ctx;
+}
+
+async function playBeep(): Promise<void> {
+  const ctx = await unlockSharedAudioContext();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = 880;
+  gain.gain.value = 0.03;
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.18);
+}
 
 interface PhaseCompletionData {
   artifacts?: {
@@ -43,6 +84,25 @@ export function PhaseCompletionDialog({
   onContinue,
   onOpenChapterStudio,
 }: PhaseCompletionDialogProps) {
+  useEffect(() => {
+    const unlock = () => {
+      void unlockSharedAudioContext();
+    };
+
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void playBeep();
+  }, [open]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">

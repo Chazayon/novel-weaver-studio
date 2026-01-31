@@ -67,6 +67,17 @@ class Phase5ChapterOutlineWorkflow:
             start_to_close_timeout=workflow.timedelta(seconds=30),
             retry_policy=RetryPolicy(maximum_attempts=2),
         )
+
+        context_bundle_tags_json = ""
+        try:
+            context_bundle_tags_json = await workflow.execute_activity(
+                load_artifact_activity,
+                args=[input.project_id, "phase1_outputs/context_bundle_tags.json"],
+                start_to_close_timeout=workflow.timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            )
+        except Exception:
+            context_bundle_tags_json = ""
         
         outline_template = input.outline_template or "USE_BUNDLE"
         
@@ -75,6 +86,7 @@ class Phase5ChapterOutlineWorkflow:
         
         outline = await self._generate_chapter_outline(
             context_bundle=context_bundle,
+            context_bundle_tags_json=context_bundle_tags_json,
             outline_template=outline_template,
             auto_approve=input.auto_approve,
             project_id=input.project_id,
@@ -153,6 +165,7 @@ Return the full updated Context Bundle in Markdown.
     async def _generate_chapter_outline(
         self,
         context_bundle: str,
+        context_bundle_tags_json: str,
         outline_template: str,
         auto_approve: bool,
         project_id: str,
@@ -173,6 +186,10 @@ Return the full updated Context Bundle in Markdown.
 {context_bundle}
 </context_bundle>
 
+<context_bundle_tags_json>
+{context_bundle_tags_json}
+</context_bundle_tags_json>
+
 <outline_template_override>
 {outline_template}
 </outline_template_override>
@@ -184,6 +201,14 @@ Rules:
 - If override is SKIP, use a sensible default for the genre.
 - Each chapter summary should be specific (200–250 words), like a handoff to a ghostwriter.
 - Keep the outline consistent with characters, worldbuilding, and genre conventions from the bundle.
+- If the tags JSON is present, use it as a consistency aid for canonical names, aliases, locations, factions, rules, themes, and prohibited words.
+
+Formatting requirements (strict):
+- Do NOT use Markdown tables.
+- Every chapter MUST be a Markdown heading exactly like: ### Chapter 1: The Title
+- Immediately under each chapter heading, write the 200–250 word summary as normal paragraphs.
+- You MAY add book/part separators as Markdown headings, but chapter headings MUST remain exactly as specified.
+- Chapter numbering MUST be global and continuous across the entire series (do not restart at Chapter 1 for each book).
 
 Output as Markdown:
 ## OUTLINE
@@ -266,6 +291,10 @@ Paste which chapters need changes and what you want different (bullets are best)
 {context_bundle}
 </context_bundle>
 
+<context_bundle_tags_json>
+{context_bundle_tags_json}
+</context_bundle_tags_json>
+
 <current_outline>
 {outline}
 </current_outline>
@@ -276,6 +305,10 @@ Paste which chapters need changes and what you want different (bullets are best)
 
 Revise the outline to implement the revision notes.
 Keep it internally consistent and genre-appropriate.
+
+Formatting requirements (strict):
+- Preserve the existing chapter heading format: ### Chapter N: Title
+- Do NOT use Markdown tables.
 
 Output ONLY the revised Markdown outline.""",
                         0.5,

@@ -4,6 +4,7 @@ Phase 6: Single Chapter Writing Workflow
 Converts: Novel_Writing/Phase06_Single_Chapter_Writing.yaml
 """
 
+import json
 from dataclasses import dataclass
 from typing import Any, Dict
 
@@ -19,6 +20,157 @@ with workflow.unsafe.imports_passed_through():
         get_previous_chapter_activity,
         update_manifest_activity,
     )
+
+
+def _build_relevant_context_markdown(
+    tags_json: str,
+    chapter_number: int,
+    chapter_title: str,
+    chapter_notes: str | None,
+) -> str:
+    try:
+        data = json.loads(tags_json)
+    except Exception:
+        return ""
+
+    hint = None
+    for item in data.get("chapterHints", []) or []:
+        try:
+            if int(item.get("chapterNumber")) == int(chapter_number):
+                hint = item
+                break
+        except Exception:
+            continue
+
+    entities_root = data.get("entities", {}) or {}
+    entity_groups = {
+        "Characters": entities_root.get("characters", []) or [],
+        "Locations": entities_root.get("locations", []) or [],
+        "Factions": entities_root.get("factions", []) or [],
+        "Objects": entities_root.get("objects", []) or [],
+    }
+
+    def norm(s: str) -> str:
+        return (s or "").strip().lower()
+
+    def match_entity(group: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+        needle = norm(name)
+        for ent in group:
+            if norm(str(ent.get("name", ""))) == needle:
+                return ent
+            for alias in ent.get("aliases", []) or []:
+                if norm(str(alias)) == needle:
+                    return ent
+        return None
+
+    entity_names: list[str] = []
+    hint_tags: list[str] = []
+    hint_summary = ""
+    if isinstance(hint, dict):
+        entity_names = [str(x) for x in (hint.get("entities", []) or []) if str(x).strip()]
+        hint_tags = [str(x) for x in (hint.get("tags", []) or []) if str(x).strip()]
+        hint_summary = str(hint.get("summary", "") or "")
+
+    inferred_text = f"{chapter_title}\n{chapter_notes or ''}".strip().lower()
+
+    matched: dict[str, list[dict[str, Any]]] = {k: [] for k in entity_groups.keys()}
+    for name in entity_names:
+        for group_name, group in entity_groups.items():
+            ent = match_entity(group, name)
+            if ent is not None:
+                matched[group_name].append(ent)
+
+    if inferred_text:
+        for group_name, group in entity_groups.items():
+            for ent in group:
+                name = str(ent.get("name", "") or "").strip()
+                if name and norm(name) in inferred_text:
+                    matched[group_name].append(ent)
+                    continue
+                for alias in ent.get("aliases", []) or []:
+                    a = str(alias or "").strip()
+                    if a and norm(a) in inferred_text:
+                        matched[group_name].append(ent)
+                        break
+
+    # De-duplicate by entity name per group
+    for group_name, ents in matched.items():
+        seen: set[str] = set()
+        uniq: list[dict[str, Any]] = []
+        for ent in ents:
+            key = norm(str(ent.get("name", "") or ""))
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            uniq.append(ent)
+        matched[group_name] = uniq
+
+    rules: list[dict[str, Any]] = []
+    for r in data.get("rules", []) or []:
+        if not isinstance(r, dict):
+            continue
+        r_tags = [norm(str(t)) for t in (r.get("tags", []) or [])]
+        if hint_tags and any(norm(t) in r_tags for t in hint_tags):
+            rules.append(r)
+    if not rules:
+        for r in data.get("rules", []) or []:
+            if isinstance(r, dict):
+                rules.append(r)
+            if len(rules) >= 8:
+                break
+
+    themes = [str(t) for t in (data.get("themes", []) or []) if str(t).strip()]
+    prohibited = [str(w) for w in (data.get("prohibitedWords", []) or []) if str(w).strip()]
+
+    lines: list[str] = ["## RELEVANT CONTEXT", f"### Chapter {chapter_number}: {chapter_title}"]
+    if chapter_notes and str(chapter_notes).strip():
+        lines.append(f"\n<chapter_notes>\n{chapter_notes}\n</chapter_notes>")
+
+    if hint_summary.strip():
+        lines.append("\n### Chapter Hint")
+        lines.append(hint_summary.strip())
+
+    if hint_tags:
+        lines.append("\n### Tags")
+        for t in hint_tags[:25]:
+            lines.append(f"- {t}")
+
+    any_entities = any(len(v) > 0 for v in matched.values())
+    if any_entities:
+        lines.append("\n### Entities")
+        for group_name, ents in matched.items():
+            if not ents:
+                continue
+            lines.append(f"\n#### {group_name}")
+            for ent in ents[:20]:
+                name = str(ent.get("name", "") or "").strip()
+                summary = str(ent.get("summary", "") or "").strip()
+                if name and summary:
+                    lines.append(f"- **{name}**: {summary}")
+                elif name:
+                    lines.append(f"- **{name}**")
+
+    if rules:
+        lines.append("\n### Rules / Constraints")
+        for r in rules[:12]:
+            name = str(r.get("name", "") or "").strip()
+            summary = str(r.get("summary", "") or "").strip()
+            if name and summary:
+                lines.append(f"- **{name}**: {summary}")
+            elif name:
+                lines.append(f"- **{name}**")
+
+    if themes:
+        lines.append("\n### Themes")
+        for t in themes[:20]:
+            lines.append(f"- {t}")
+
+    if prohibited:
+        lines.append("\n### Prohibited Words")
+        for w in prohibited[:60]:
+            lines.append(f"- {w}")
+
+    return "\n".join(lines).strip() + "\n"
 
 
 @dataclass
@@ -736,6 +888,39 @@ class Phase6SceneBriefWorkflow:
         previous_chapter_text = await previous_chapter_text_fut
         chapter_notes = input.chapter_notes or ""
 
+        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        relevant_context = ""
+        try:
+            relevant_context = await workflow.execute_activity(
+                load_artifact_activity,
+                args=[input.project_id, f"{chapter_dir}/relevant_context.md"],
+                start_to_close_timeout=workflow.timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            )
+        except Exception:
+            tags_json = ""
+            try:
+                tags_json = await workflow.execute_activity(
+                    load_artifact_activity,
+                    args=[input.project_id, "phase1_outputs/context_bundle_tags.json"],
+                    start_to_close_timeout=workflow.timedelta(seconds=30),
+                    retry_policy=RetryPolicy(maximum_attempts=1),
+                )
+            except Exception:
+                tags_json = ""
+
+            if isinstance(tags_json, str) and tags_json.strip():
+                relevant_context = _build_relevant_context_markdown(
+                    tags_json, input.chapter_number, input.chapter_title, chapter_notes
+                )
+                if relevant_context.strip():
+                    await workflow.execute_activity(
+                        save_artifact_activity,
+                        args=[input.project_id, f"{chapter_dir}/relevant_context.md", relevant_context],
+                        start_to_close_timeout=workflow.timedelta(seconds=30),
+                        retry_policy=RetryPolicy(maximum_attempts=3),
+                    )
+
         self._current_status = "generating_scene_brief"
 
         scene_brief = await workflow.execute_activity(
@@ -744,7 +929,7 @@ class Phase6SceneBriefWorkflow:
                 "default",
                 "default",
                 """You are a scene planning expert who creates detailed, actionable scene briefs for fiction writing.""",
-                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<previous_chapter_text>\n{previous_chapter_text}\n</previous_chapter_text>\n\n<chapter_notes>\n{chapter_notes}\n</chapter_notes>\n\nCreate a detailed scene brief for:\n\n## Chapter {input.chapter_number}: {input.chapter_title}\n\nRequirements:\n- Stay consistent with the OUTLINE, CHARACTERS, WORLDBUILDING, STYLE_SHEET and GENRE_TROPES in the bundle.\n- If previous_chapter_text != NONE, include a short \"continuity carryover\" section.\n- Include: POV, setting, time, scene goal, conflict, beats, emotional arc, and ending hook.\n- Include a short \"DO / DON'T\" list from the style sheet and prohibited words.\n\nOutput as Markdown only.""",
+                f"""<relevant_context>\n{relevant_context}\n</relevant_context>\n\n<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<previous_chapter_text>\n{previous_chapter_text}\n</previous_chapter_text>\n\n<chapter_notes>\n{chapter_notes}\n</chapter_notes>\n\nCreate a detailed scene brief for:\n\n## Chapter {input.chapter_number}: {input.chapter_title}\n\nRequirements:\n- Use relevant_context as the high-priority canon subset when present; use context_bundle to verify continuity.\n- Stay consistent with the OUTLINE, CHARACTERS, WORLDBUILDING, STYLE_SHEET and GENRE_TROPES in the bundle.\n- If previous_chapter_text != NONE, include a short \"continuity carryover\" section.\n- Include: POV, setting, time, scene goal, conflict, beats, emotional arc, and ending hook.\n- Include a short \"DO / DON'T\" list from the style sheet and prohibited words.\n\nOutput as Markdown only.""",
                 0.6,
                 5000,
                 input.project_id,
@@ -799,6 +984,18 @@ class Phase6FirstDraftWorkflow:
         context_bundle = await context_bundle_fut
         scene_brief = await scene_brief_fut
 
+        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        relevant_context = ""
+        try:
+            relevant_context = await workflow.execute_activity(
+                load_artifact_activity,
+                args=[input.project_id, f"{chapter_dir}/relevant_context.md"],
+                start_to_close_timeout=workflow.timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            )
+        except Exception:
+            relevant_context = ""
+
         self._current_status = "generating_first_draft"
 
         first_draft = await workflow.execute_activity(
@@ -807,7 +1004,7 @@ class Phase6FirstDraftWorkflow:
                 "default",
                 "default",
                 """You are an expert novelist.\nFollow the style sheet and avoid prohibited words.""",
-                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\nWrite Chapter {input.chapter_number}: {input.chapter_title} as complete prose.\n\nRequirements:\n- Respect the style sheet (voice, POV, tense, rhythm).\n- Avoid prohibited words and AI-isms.\n- Keep pacing tight: prioritize scene goal + conflict + escalation.\n- End on the hook specified in the scene brief.\n\nOutput only the full chapter in Markdown with a heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
+                f"""<relevant_context>\n{relevant_context}\n</relevant_context>\n\n<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\nWrite Chapter {input.chapter_number}: {input.chapter_title} as complete prose.\n\nRequirements:\n- Use relevant_context as high-priority canon subset when present; use context_bundle to verify continuity.\n- Respect the style sheet (voice, POV, tense, rhythm).\n- Avoid prohibited words and AI-isms.\n- Keep pacing tight: prioritize scene goal + conflict + escalation.\n- End on the hook specified in the scene brief.\n\nOutput only the full chapter in Markdown with a heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
                 0.75,
                 12000,
                 input.project_id,
@@ -868,6 +1065,18 @@ class Phase6ImprovementPlanWorkflow:
         scene_brief = await scene_brief_fut
         first_draft = await first_draft_fut
 
+        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        relevant_context = ""
+        try:
+            relevant_context = await workflow.execute_activity(
+                load_artifact_activity,
+                args=[input.project_id, f"{chapter_dir}/relevant_context.md"],
+                start_to_close_timeout=workflow.timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            )
+        except Exception:
+            relevant_context = ""
+
         self._current_status = "generating_improvement_plan"
 
         improvement_plan = await workflow.execute_activity(
@@ -876,7 +1085,7 @@ class Phase6ImprovementPlanWorkflow:
                 "default",
                 "default",
                 """You are a developmental editor and line editor. You identify the highest-impact improvements.""",
-                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\n<first_draft>\n{first_draft}\n</first_draft>\n\nCreate an improvement plan with:\n1) Continuity issues (with prior chapter/outline)\n2) Character voice issues\n3) Pacing issues\n4) Show-don't-tell upgrades (specific line-level suggestions)\n5) Dialogue/subtext upgrades\n6) Any prohibited word / AI-ism cleanup\n\nOutput as Markdown:\n# IMPROVEMENT PLAN\n- ...""",
+                f"""<relevant_context>\n{relevant_context}\n</relevant_context>\n\n<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\n<first_draft>\n{first_draft}\n</first_draft>\n\nCreate an improvement plan with:\n1) Continuity issues (with prior chapter/outline)\n2) Character voice issues\n3) Pacing issues\n4) Show-don't-tell upgrades (specific line-level suggestions)\n5) Dialogue/subtext upgrades\n6) Any prohibited word / AI-ism cleanup\n\nOutput as Markdown:\n# IMPROVEMENT PLAN\n- ...""",
                 0.3,
                 5000,
                 input.project_id,
@@ -937,6 +1146,18 @@ class Phase6ApplyImprovementPlanWorkflow:
         first_draft = await first_draft_fut
         improvement_plan = await improvement_plan_fut
 
+        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        relevant_context = ""
+        try:
+            relevant_context = await workflow.execute_activity(
+                load_artifact_activity,
+                args=[input.project_id, f"{chapter_dir}/relevant_context.md"],
+                start_to_close_timeout=workflow.timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            )
+        except Exception:
+            relevant_context = ""
+
         self._current_status = "applying_improvement_plan"
 
         revised_draft = await workflow.execute_activity(
@@ -945,7 +1166,7 @@ class Phase6ApplyImprovementPlanWorkflow:
                 "default",
                 "default",
                 """You are an expert reviser. Apply plans precisely while preserving voice.""",
-                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<improvement_plan>\n{improvement_plan}\n</improvement_plan>\n\n<draft>\n{first_draft}\n</draft>\n\nRevise the chapter by implementing the improvement plan.\nOutput ONLY the revised chapter in Markdown and start with this exact heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
+                f"""<relevant_context>\n{relevant_context}\n</relevant_context>\n\n<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<improvement_plan>\n{improvement_plan}\n</improvement_plan>\n\n<draft>\n{first_draft}\n</draft>\n\nRevise the chapter by implementing the improvement plan.\nOutput ONLY the revised chapter in Markdown and start with this exact heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
                 0.6,
                 12000,
                 input.project_id,
@@ -1006,6 +1227,17 @@ class Phase6FinalWorkflow:
         scene_brief = await scene_brief_fut
         first_draft = await first_draft_fut
 
+        relevant_context = ""
+        try:
+            relevant_context = await workflow.execute_activity(
+                load_artifact_activity,
+                args=[input.project_id, f"{chapter_dir}/relevant_context.md"],
+                start_to_close_timeout=workflow.timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            )
+        except Exception:
+            relevant_context = ""
+
         draft_source = "first_draft"
         draft_text = first_draft
         try:
@@ -1046,7 +1278,7 @@ class Phase6FinalWorkflow:
                 "default",
                 "default",
                 """You are an expert reviser. Produce a publication-ready final chapter while preserving voice.""",
-                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\n<draft>\n{draft_text}\n</draft>{plan_block}\n\nIf an improvement_plan is present, apply it. Otherwise, do a light polish pass for clarity, pacing, voice, and continuity.\n\nOutput ONLY the final chapter in Markdown and start with this exact heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
+                f"""<relevant_context>\n{relevant_context}\n</relevant_context>\n\n<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\n<draft>\n{draft_text}\n</draft>{plan_block}\n\nIf an improvement_plan is present, apply it. Otherwise, do a light polish pass for clarity, pacing, voice, and continuity.\n\nOutput ONLY the final chapter in Markdown and start with this exact heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
                 0.6,
                 12000,
                 input.project_id,

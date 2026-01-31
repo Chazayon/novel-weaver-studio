@@ -11,6 +11,7 @@ const navItems = [
   { path: '/', icon: Home, label: 'Projects' },
   { path: '/cockpit', icon: Layers, label: 'Workflow' },
   { path: '/chapter-studio', icon: FileText, label: 'Chapter Studio' },
+  { path: '/phase5-context', icon: Sparkles, label: 'Context Bundle' },
   { path: '/phase6-wizard', icon: Wand2, label: 'Phase 6 Wizard' },
   { path: '/compile', icon: Download, label: 'Compile' },
   { path: '/llm-settings', icon: SlidersHorizontal, label: 'LLM Settings' },
