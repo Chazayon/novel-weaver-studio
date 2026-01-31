@@ -1,5 +1,6 @@
 """API routes for Novel Weaver Studio backend."""
 
+import json
 import uuid
 from datetime import datetime
 from typing import List
@@ -205,29 +206,40 @@ async def get_project_llm_settings(project_id: str):
 async def update_project_llm_settings(project_id: str, payload: ProjectLLMSettingsUpdate):
     """Update per-project LLM settings."""
     try:
-        storage_manager.get_project_manifest(project_id)
+        manifest = storage_manager.get_project_manifest(project_id)
 
-        llm_patch: dict = {}
+        settings_obj = manifest.get("settings", {})
+        if not isinstance(settings_obj, dict):
+            settings_obj = {}
+
+        llm_settings = settings_obj.get("llm", {})
+        if not isinstance(llm_settings, dict):
+            llm_settings = {}
 
         if payload.default is not None:
-            llm_patch["default"] = payload.default.model_dump(by_alias=True, exclude_none=True)
+            llm_settings["default"] = payload.default.model_dump(by_alias=True, exclude_none=True)
 
         if payload.profiles is not None:
-            llm_patch["profiles"] = {
+            profiles_dump = {
                 key: profile.model_dump(by_alias=True, exclude_none=True)
                 for key, profile in payload.profiles.items()
             }
 
-        patch = {
-            "updated_at": datetime.utcnow().isoformat(),
-            "settings": {"llm": llm_patch},
-        }
+            if payload.replace_profiles:
+                llm_settings["profiles"] = profiles_dump
+            else:
+                existing_profiles = llm_settings.get("profiles", {})
+                if not isinstance(existing_profiles, dict):
+                    existing_profiles = {}
+                existing_profiles.update(profiles_dump)
+                llm_settings["profiles"] = existing_profiles
 
-        result = novel_vault.novel_update_manifest(project_id, patch)
-        manifest = result.get("manifest", {})
-        llm_settings = manifest.get("settings", {}).get("llm", {})
-        if not isinstance(llm_settings, dict):
-            llm_settings = {}
+        settings_obj["llm"] = llm_settings
+        manifest["settings"] = settings_obj
+        manifest["updated_at"] = datetime.utcnow().isoformat()
+
+        manifest_path = storage_manager.get_project_path(project_id) / "project.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
         return ProjectLLMSettings.model_validate(llm_settings)
     except FileNotFoundError:

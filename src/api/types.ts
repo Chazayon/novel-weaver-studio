@@ -140,6 +140,7 @@ export interface ProjectLLMSettings {
 export interface ProjectLLMSettingsUpdate {
     default?: LLMStepProfile;
     profiles?: Record<string, LLMStepProfile>;
+    replaceProfiles?: boolean;
 }
 
 export interface HealthResponse {

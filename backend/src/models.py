@@ -105,6 +105,11 @@ class ProjectLLMSettingsUpdate(BaseModel):
     default: Optional[LLMStepProfile] = None
     profiles: Optional[Dict[str, LLMStepProfile]] = None
 
+    replace_profiles: bool = Field(default=False, alias="replaceProfiles")
+
+    class Config:
+        populate_by_name = True
+
 
 class ArtifactUpdateRequest(BaseModel):
     """Request to update an artifact."""

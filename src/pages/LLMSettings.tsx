@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
+import { Trash2 } from 'lucide-react';
 
 const RECOMMENDED_PROFILES: Array<{ key: string; defaults: LLMStepProfile }> = [
   { key: 'phase1-style-sheet', defaults: { temperature: 0.2, maxTokens: 4000 } },
@@ -60,6 +61,10 @@ function updateProfileField(
   if (field === 'maxTokens') {
     return { ...profile, maxTokens: toNumberOrUndefined(value, 'int') };
   }
+  if (field === 'provider' || field === 'model') {
+    const trimmed = value.trim();
+    return { ...profile, [field]: trimmed ? trimmed : undefined };
+  }
   return { ...profile, [field]: value };
 }
 
@@ -109,6 +114,17 @@ export default function LLMSettings() {
     });
   };
 
+  const deleteProfile = (key: string) => {
+    const ok = window.confirm(`Delete profile "${key}"?`);
+    if (!ok) return;
+
+    setDraft((prev) => {
+      const nextProfiles = { ...(prev.profiles || {}) };
+      delete nextProfiles[key];
+      return { ...prev, profiles: nextProfiles };
+    });
+  };
+
   const addProfile = () => {
     const key = newProfileKey.trim();
     if (!key) return;
@@ -142,6 +158,7 @@ export default function LLMSettings() {
       await updateMutation.mutateAsync({
         default: draft.default,
         profiles: draft.profiles,
+        replaceProfiles: true,
       });
       toast({
         title: 'Saved',
@@ -313,12 +330,13 @@ export default function LLMSettings() {
                   <TableHead>Model</TableHead>
                   <TableHead>Temperature</TableHead>
                   <TableHead>Max tokens</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedProfileKeys.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-muted-foreground">
+                    <TableCell colSpan={6} className="text-muted-foreground">
                       No profiles defined yet.
                     </TableCell>
                   </TableRow>
@@ -364,6 +382,17 @@ export default function LLMSettings() {
                           className="bg-muted/50 border-border"
                           placeholder="9000"
                         />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          onClick={() => deleteProfile(key)}
+                          disabled={updateMutation.isPending}
+                        >
+                          <Trash2 />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
