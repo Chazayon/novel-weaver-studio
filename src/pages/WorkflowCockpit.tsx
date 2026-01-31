@@ -769,7 +769,11 @@ export default function WorkflowCockpit() {
     } else if (activePhase.id === 7) {
       navigate('/compile');
     } else {
-      navigate(`/phase-editor/${activePhase.id}`);
+      if (projectId) {
+        navigate(`/phase-editor/${activePhase.id}?projectId=${projectId}`);
+      } else {
+        navigate(`/phase-editor/${activePhase.id}`);
+      }
     }
   };
 
