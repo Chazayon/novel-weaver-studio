@@ -94,6 +94,8 @@ Author name: {author_name}
 Output ONLY the final manuscript Markdown.""",
                 0.2,
                 16000,
+                input.project_id,
+                "phase7-compile",
             ],
             start_to_close_timeout=workflow.timedelta(minutes=10),
             retry_policy=RetryPolicy(maximum_attempts=3),

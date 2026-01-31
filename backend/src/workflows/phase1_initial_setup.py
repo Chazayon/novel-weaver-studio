@@ -238,6 +238,8 @@ If the user provided `SKIP` for writing samples, create a default style sheet su
                 style_sheet_task,
                 0.2,
                 4000,
+                input.project_id,
+                "phase1-style-sheet",
             ],
             start_to_close_timeout=workflow.timedelta(minutes=5),
         )
@@ -334,6 +336,8 @@ Your job is to compile all Phase 1 artifacts into a single, pasteable Context Bu
                 context_bundle_task,
                 0.1,
                 7000,
+                project_id,
+                "phase1-context-bundle",
             ],
             start_to_close_timeout=workflow.timedelta(minutes=5),
         )
@@ -436,6 +440,8 @@ Keep it internally consistent and well-structured.
 Output ONLY the revised Markdown context bundle.""",
                         0.5,
                         8000,
+                        project_id,
+                        "phase1-context-bundle-revise",
                     ],
                     start_to_close_timeout=workflow.timedelta(minutes=5),
                     retry_policy=RetryPolicy(maximum_attempts=3),

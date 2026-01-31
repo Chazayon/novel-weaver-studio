@@ -125,6 +125,23 @@ export interface SystemStats {
     uptimeSeconds: number;
 }
 
+export interface LLMStepProfile {
+    provider?: string;
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+}
+
+export interface ProjectLLMSettings {
+    default?: LLMStepProfile;
+    profiles: Record<string, LLMStepProfile>;
+}
+
+export interface ProjectLLMSettingsUpdate {
+    default?: LLMStepProfile;
+    profiles?: Record<string, LLMStepProfile>;
+}
+
 export interface HealthResponse {
     status: string;
     timestamp: string;

@@ -8,6 +8,7 @@ import WorkflowCockpit from "./pages/WorkflowCockpit";
 import ChapterStudio from "./pages/ChapterStudio";
 import PhaseEditor from "./pages/PhaseEditor";
 import CompileExport from "./pages/CompileExport";
+import LLMSettings from "./pages/LLMSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/chapter-studio" element={<ChapterStudio />} />
           <Route path="/phase-editor/:phaseId" element={<PhaseEditor />} />
           <Route path="/compile" element={<CompileExport />} />
+          <Route path="/llm-settings" element={<LLMSettings />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

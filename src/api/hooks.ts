@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from './client';
 import {
     ProjectCreate,
@@ -10,6 +10,7 @@ import {
     ArtifactInfo,
     PendingInput,
     SystemStats,
+    ProjectLLMSettingsUpdate,
 } from './types';
 
 // ============================================================================
@@ -20,6 +21,7 @@ export const queryKeys = {
     projects: ['projects'] as const,
     project: (id: string) => ['projects', id] as const,
     projectProgress: (id: string) => ['projects', id, 'progress'] as const,
+    projectLlmSettings: (id: string) => ['projects', id, 'settings', 'llm'] as const,
     phaseStatus: (projectId: string, phase: number, workflowId?: string) =>
         ['projects', projectId, 'phases', phase, 'status', workflowId] as const,
     chapters: (projectId: string) => ['projects', projectId, 'chapters'] as const,
@@ -40,6 +42,32 @@ export function useProjects() {
         queryKey: queryKeys.projects,
         queryFn: () => apiClient.listProjects(),
         staleTime: 30000, // 30 seconds
+    });
+}
+
+// ============================================================================
+// Project Settings Hooks
+// ============================================================================
+
+export function useProjectLlmSettings(projectId: string | undefined) {
+    return useQuery({
+        queryKey: queryKeys.projectLlmSettings(projectId!),
+        queryFn: () => apiClient.getProjectLlmSettings(projectId!),
+        enabled: !!projectId,
+        staleTime: 30000,
+    });
+}
+
+export function useUpdateProjectLlmSettings(projectId: string | undefined) {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: (payload: ProjectLLMSettingsUpdate) =>
+            apiClient.updateProjectLlmSettings(projectId!, payload),
+        onSuccess: () => {
+            if (!projectId) return;
+            queryClient.invalidateQueries({ queryKey: queryKeys.projectLlmSettings(projectId) });
+        },
     });
 }
 

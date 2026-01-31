@@ -13,6 +13,8 @@ from ..models import (
     ArtifactInfo,
     ArtifactUpdateRequest,
     PhaseExecuteRequest,
+    ProjectLLMSettings,
+    ProjectLLMSettingsUpdate,
     WorkflowStatus,
     PhaseStatus,
     WorkflowSignal,
@@ -176,6 +178,62 @@ async def get_project(project_id: str):
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get project: {str(e)}")
+
+
+@router.get("/projects/{project_id}/settings/llm", response_model=ProjectLLMSettings)
+async def get_project_llm_settings(project_id: str):
+    """Get per-project LLM settings (profiles, temperature, max tokens, etc.)."""
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        llm_settings = (
+            manifest.get("settings", {}).get("llm", {})
+            if isinstance(manifest.get("settings", {}), dict)
+            else {}
+        )
+
+        if not isinstance(llm_settings, dict):
+            llm_settings = {}
+
+        return ProjectLLMSettings.model_validate(llm_settings)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get LLM settings: {str(e)}")
+
+
+@router.put("/projects/{project_id}/settings/llm", response_model=ProjectLLMSettings)
+async def update_project_llm_settings(project_id: str, payload: ProjectLLMSettingsUpdate):
+    """Update per-project LLM settings."""
+    try:
+        storage_manager.get_project_manifest(project_id)
+
+        llm_patch: dict = {}
+
+        if payload.default is not None:
+            llm_patch["default"] = payload.default.model_dump(by_alias=True, exclude_none=True)
+
+        if payload.profiles is not None:
+            llm_patch["profiles"] = {
+                key: profile.model_dump(by_alias=True, exclude_none=True)
+                for key, profile in payload.profiles.items()
+            }
+
+        patch = {
+            "updated_at": datetime.utcnow().isoformat(),
+            "settings": {"llm": llm_patch},
+        }
+
+        result = novel_vault.novel_update_manifest(project_id, patch)
+        manifest = result.get("manifest", {})
+        llm_settings = manifest.get("settings", {}).get("llm", {})
+        if not isinstance(llm_settings, dict):
+            llm_settings = {}
+
+        return ProjectLLMSettings.model_validate(llm_settings)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update LLM settings: {str(e)}")
 
 
 @router.delete("/projects/{project_id}")

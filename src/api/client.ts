@@ -18,6 +18,8 @@ import {
     SystemStats,
     HealthResponse,
     CancelWorkflowResponse,
+    ProjectLLMSettings,
+    ProjectLLMSettingsUpdate,
 } from './types';
 
 // API Client Configuration
@@ -259,6 +261,28 @@ class NovelWeaverClient {
 
     async healthCheck(): Promise<HealthResponse> {
         const response = await this.client.get<HealthResponse>('/health');
+        return response.data;
+    }
+
+    // =========================================================================
+    // Project Settings: LLM
+    // =========================================================================
+
+    async getProjectLlmSettings(projectId: string): Promise<ProjectLLMSettings> {
+        const response = await this.client.get<ProjectLLMSettings>(
+            `/projects/${projectId}/settings/llm`
+        );
+        return response.data;
+    }
+
+    async updateProjectLlmSettings(
+        projectId: string,
+        payload: ProjectLLMSettingsUpdate
+    ): Promise<ProjectLLMSettings> {
+        const response = await this.client.put<ProjectLLMSettings>(
+            `/projects/${projectId}/settings/llm`,
+            payload
+        );
         return response.data;
     }
 }

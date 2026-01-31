@@ -7,7 +7,7 @@ from datetime import datetime
 from temporalio import activity
 
 from ..llm import get_provider_manager
-from ..vault import novel_vault
+from ..vault import novel_vault, storage_manager
 from ..config import settings
 
 
@@ -19,6 +19,8 @@ async def llm_generate_activity(
     task: str,
     temperature: float = 0.7,
     max_tokens: int = 4000,
+    project_id: Optional[str] = None,
+    profile: Optional[str] = None,
 ) -> str:
     """
     Execute LLM generation from workflow.
@@ -35,11 +37,64 @@ async def llm_generate_activity(
     Returns:
         Generated text
     """
-    # Use system-wide defaults if "default" is passed or values are empty
-    effective_provider = provider if provider and provider != "default" else settings.default_llm_provider
-    effective_model = model if model and model != "default" else settings.default_llm_model
-    
-    activity.logger.info(f"Generating with {effective_provider}/{effective_model}")
+    def _resolve_project_profile(pid: str, key: str) -> Dict[str, Any]:
+        manifest = storage_manager.get_project_manifest(pid)
+        settings_root = manifest.get("settings", {})
+        if not isinstance(settings_root, dict):
+            return {}
+
+        llm_settings = settings_root.get("llm", {})
+        if not isinstance(llm_settings, dict):
+            return {}
+
+        merged: Dict[str, Any] = {}
+
+        default_profile = llm_settings.get("default")
+        if isinstance(default_profile, dict):
+            merged.update(default_profile)
+
+        profiles = llm_settings.get("profiles", {})
+        if isinstance(profiles, dict):
+            override = profiles.get(key)
+            if isinstance(override, dict):
+                merged.update(override)
+
+        return merged
+
+    # Resolve provider/model defaults (explicit args win; "default" means: use project profile if set, else env defaults)
+    effective_provider = provider
+    effective_model = model
+    effective_temperature = temperature
+    effective_max_tokens = max_tokens
+
+    project_overrides: Dict[str, Any] = {}
+    if project_id and profile:
+        try:
+            project_overrides = _resolve_project_profile(project_id, profile)
+        except Exception as e:
+            activity.logger.warning(f"Failed to resolve project LLM profile '{profile}': {e}")
+            project_overrides = {}
+
+    if not effective_provider or effective_provider == "default":
+        effective_provider = project_overrides.get("provider") or settings.default_llm_provider
+
+    if not effective_model or effective_model == "default":
+        effective_model = project_overrides.get("model") or settings.default_llm_model
+
+    if project_overrides.get("temperature") is not None:
+        effective_temperature = float(project_overrides["temperature"])
+
+    project_max_tokens = project_overrides.get("maxTokens")
+    if project_max_tokens is None:
+        project_max_tokens = project_overrides.get("max_tokens")
+    if project_max_tokens is not None:
+        effective_max_tokens = int(project_max_tokens)
+
+    profile_suffix = f" (profile={profile})" if profile else ""
+    activity.logger.info(
+        f"Generating with {effective_provider}/{effective_model}{profile_suffix} "
+        f"temp={effective_temperature} max_tokens={effective_max_tokens}"
+    )
     
     manager = get_provider_manager()
     
@@ -48,8 +103,8 @@ async def llm_generate_activity(
         model=effective_model,
         role=role,
         task=task,
-        temperature=temperature,
-        max_tokens=max_tokens,
+        temperature=effective_temperature,
+        max_tokens=effective_max_tokens,
     )
     
     activity.logger.info(f"Generated {len(result)} characters")

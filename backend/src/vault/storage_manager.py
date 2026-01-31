@@ -48,11 +48,39 @@ def create_project(project_id: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
     
     # Create project manifest
     now = datetime.utcnow().isoformat()
+    llm_profiles = {
+        "phase1-style-sheet": {"temperature": 0.2, "maxTokens": 4000},
+        "phase1-context-bundle": {"temperature": 0.1, "maxTokens": 7000},
+        "phase1-context-bundle-revise": {"temperature": 0.5, "maxTokens": 8000},
+        "phase2-series-outline": {"temperature": 0.7, "maxTokens": 8000},
+        "phase2-series-outline-revise": {"temperature": 0.5, "maxTokens": 8000},
+        "phase2-context-bundle-update": {"temperature": 0.1, "maxTokens": 9000},
+        "phase3-call-sheet": {"temperature": 0.4, "maxTokens": 6000},
+        "phase3-context-bundle-update": {"temperature": 0.1, "maxTokens": 9000},
+        "phase4-characters": {"temperature": 0.5, "maxTokens": 7000},
+        "phase4-worldbuilding": {"temperature": 0.5, "maxTokens": 8000},
+        "phase4-context-bundle-update": {"temperature": 0.1, "maxTokens": 12000},
+        "phase5-outline": {"temperature": 0.6, "maxTokens": 9000},
+        "phase5-outline-revise": {"temperature": 0.5, "maxTokens": 9000},
+        "phase5-context-bundle-update": {"temperature": 0.1, "maxTokens": 12000},
+        "phase6-scene-brief": {"temperature": 0.6, "maxTokens": 5000},
+        "phase6-first-draft": {"temperature": 0.75, "maxTokens": 12000},
+        "phase6-improvement-plan": {"temperature": 0.3, "maxTokens": 5000},
+        "phase6-apply-improvement-plan": {"temperature": 0.6, "maxTokens": 12000},
+        "phase6-final-revise": {"temperature": 0.55, "maxTokens": 12000},
+        "phase6-context-bundle-update": {"temperature": 0.1, "maxTokens": 12000},
+        "phase7-compile": {"temperature": 0.2, "maxTokens": 16000},
+    }
     manifest = {
         "project_id": project_id,
         "created_at": now,
         "updated_at": now,
         "metadata": metadata,
+        "settings": {
+            "llm": {
+                "profiles": llm_profiles,
+            }
+        },
         "state": {
             "current_phase": 1,
             "phases_completed": [],

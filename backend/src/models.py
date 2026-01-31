@@ -86,6 +86,26 @@ class PhaseExecuteRequest(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
 
 
+class LLMStepProfile(BaseModel):
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = Field(default=None, alias="maxTokens")
+
+    class Config:
+        populate_by_name = True
+
+
+class ProjectLLMSettings(BaseModel):
+    default: Optional[LLMStepProfile] = None
+    profiles: Dict[str, LLMStepProfile] = Field(default_factory=dict)
+
+
+class ProjectLLMSettingsUpdate(BaseModel):
+    default: Optional[LLMStepProfile] = None
+    profiles: Optional[Dict[str, LLMStepProfile]] = None
+
+
 class ArtifactUpdateRequest(BaseModel):
     """Request to update an artifact."""
     content: str
