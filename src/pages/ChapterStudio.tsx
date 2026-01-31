@@ -89,8 +89,8 @@ export default function ChapterStudio() {
   const [targetWordCount, setTargetWordCount] = useState([3000]);
   const [selectedTone, setSelectedTone] = useState('neutral');
   const [isRunning, setIsRunning] = useState(false);
-  const [isChaptersOpen, toggleChaptersOpen] = usePanelState('chapter-studio-chapters', true);
-  const [isControlsOpen, toggleControlsOpen] = usePanelState('chapter-studio-controls', true);
+  const [isChaptersOpen, toggleChaptersOpen] = usePanelState('chapter-studio-chapters', true, projectId);
+  const [isControlsOpen, toggleControlsOpen] = usePanelState('chapter-studio-controls', true, projectId);
   const [currentWorkflowStep, setCurrentWorkflowStep] = useState<string | null>(null);
   const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
   const [runningChapterNumber, setRunningChapterNumber] = useState<number | null>(null);

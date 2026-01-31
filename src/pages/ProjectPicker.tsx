@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ProjectCard } from '@/components/shared/ProjectCard';
@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,16 @@ import {
   DialogTrigger,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -38,6 +49,8 @@ const genres = [
   'Historical Fiction',
 ];
 
+const ARCHIVED_PROJECTS_KEY = 'novel-weaver:archived-projects';
+
 export default function ProjectPicker() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -49,13 +62,35 @@ export default function ProjectPicker() {
 
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'recent' | 'alphabetical' | 'progress'>('recent');
+  const [showArchived, setShowArchived] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [archivedProjectIds, setArchivedProjectIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(ARCHIVED_PROJECTS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  });
   const [newProject, setNewProject] = useState({
     title: '',
     author: '',
     genre: '',
     seriesLength: 20,
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ARCHIVED_PROJECTS_KEY, JSON.stringify(archivedProjectIds));
+    } catch {
+      // ignore
+    }
+  }, [archivedProjectIds]);
+
+  const archivedSet = useMemo(() => new Set(archivedProjectIds), [archivedProjectIds]);
 
   // Convert API projects to frontend format
   const projects: Project[] = (apiProjects || []).map(p => ({
@@ -70,12 +105,42 @@ export default function ProjectPicker() {
     progress: p.progress,
   }));
 
+  const toggleArchive = (projectId: string) => {
+    setArchivedProjectIds((prev) =>
+      prev.includes(projectId) ? prev.filter((id) => id !== projectId) : [...prev, projectId]
+    );
+  };
+
+  const handleDeleteProject = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteProjectMutation.mutateAsync(deleteTarget.id);
+      setArchivedProjectIds((prev) => prev.filter((id) => id !== deleteTarget.id));
+      toast({
+        title: 'Project deleted',
+        description: `"${deleteTarget.title}" has been deleted.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete project',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleteOpen(false);
+      setDeleteTarget(null);
+    }
+  };
+
   // Filter and sort projects
   const filteredProjects = projects
-    .filter((p) =>
-      p.title.toLowerCase().includes(search.toLowerCase()) ||
-      p.genre.toLowerCase().includes(search.toLowerCase())
-    )
+    .filter((p) => {
+      const matchesSearch =
+        p.title.toLowerCase().includes(search.toLowerCase()) ||
+        p.genre.toLowerCase().includes(search.toLowerCase());
+      const isArchived = archivedSet.has(p.id);
+      return matchesSearch && (showArchived || !isArchived);
+    })
     .sort((a, b) => {
       if (sortBy === 'recent') return b.updatedAt.getTime() - a.updatedAt.getTime();
       if (sortBy === 'alphabetical') return a.title.localeCompare(b.title);
@@ -91,7 +156,7 @@ export default function ProjectPicker() {
         title: 'Project created',
         description: `"${project.title}" has been created successfully.`,
       });
-      navigate('/cockpit');
+      navigate(`/cockpit?project=${project.id}`);
     } catch (error) {
       toast({
         title: 'Error',
@@ -233,6 +298,10 @@ export default function ProjectPicker() {
                   className="pl-10 bg-muted/50 border-border"
                 />
               </div>
+              <div className="flex items-center gap-3">
+                <Label className="text-xs text-muted-foreground">Show archived</Label>
+                <Switch checked={showArchived} onCheckedChange={setShowArchived} />
+              </div>
               <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
                 <SelectTrigger className="w-[180px] bg-muted/50 border-border">
                   <ArrowUpDown className="w-4 h-4 mr-2" />
@@ -257,7 +326,13 @@ export default function ProjectPicker() {
                   >
                     <ProjectCard
                       project={project}
-                      onClick={() => navigate('/cockpit')}
+                      onClick={() => navigate(`/cockpit?project=${project.id}`)}
+                      isArchived={archivedSet.has(project.id)}
+                      onArchiveToggle={() => toggleArchive(project.id)}
+                      onDelete={() => {
+                        setDeleteTarget(project);
+                        setIsDeleteOpen(true);
+                      }}
                     />
                   </div>
                 ))}
@@ -276,6 +351,34 @@ export default function ProjectPicker() {
           </>
         )}
       </div>
+
+      <AlertDialog
+        open={isDeleteOpen}
+        onOpenChange={(open) => {
+          setIsDeleteOpen(open);
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {deleteTarget ? `"${deleteTarget.title}"` : 'this project'} and its data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteProjectMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteProject}
+              disabled={deleteProjectMutation.isPending}
+            >
+              {deleteProjectMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

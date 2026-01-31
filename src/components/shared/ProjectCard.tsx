@@ -1,28 +1,94 @@
 import { Project } from '@/lib/mockData';
 import { cn } from '@/lib/utils';
-import { Calendar, BookOpen, TrendingUp } from 'lucide-react';
+import { Calendar, BookOpen, MoreVertical, Archive, Trash2 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { formatDistanceToNow } from 'date-fns';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface ProjectCardProps {
   project: Project;
   onClick?: () => void;
+  isArchived?: boolean;
+  onArchiveToggle?: () => void;
+  onDelete?: () => void;
 }
 
-export function ProjectCard({ project, onClick }: ProjectCardProps) {
+export function ProjectCard({ project, onClick, isArchived, onArchiveToggle, onDelete }: ProjectCardProps) {
   return (
     <div
       onClick={onClick}
-      className="glass-card-hover p-6 cursor-pointer group"
+      className={cn(
+        "glass-card-hover p-6 cursor-pointer group",
+        isArchived && "opacity-60"
+      )}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center group-hover:from-primary/30 group-hover:to-secondary/30 transition-all">
           <BookOpen className="w-6 h-6 text-primary" />
         </div>
-        <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded-full">
-          Phase {project.currentPhase}/7
-        </span>
+        <div className="flex items-center gap-2">
+          {isArchived && (
+            <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded-full">
+              Archived
+            </span>
+          )}
+          <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded-full">
+            Phase {project.currentPhase}/7
+          </span>
+
+          {(onArchiveToggle || onDelete) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {onArchiveToggle && (
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onArchiveToggle();
+                    }}
+                  >
+                    <Archive className="w-4 h-4 mr-2" />
+                    {isArchived ? 'Unarchive' : 'Archive'}
+                  </DropdownMenuItem>
+                )}
+                {onDelete && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete();
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
 
       {/* Title & Author */}

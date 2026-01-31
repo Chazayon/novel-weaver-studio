@@ -79,8 +79,8 @@ export default function WorkflowCockpit() {
   const cancelWorkflow = useCancelWorkflow();
 
   const [currentPhase, setCurrentPhase] = useState(1);
-  const [isPhasesOpen, togglePhasesOpen] = usePanelState('cockpit-phases', true);
-  const [isContextOpen, toggleContextOpen] = usePanelState('cockpit-context', true);
+  const [isPhasesOpen, togglePhasesOpen] = usePanelState('cockpit-phases', true, projectId);
+  const [isContextOpen, toggleContextOpen] = usePanelState('cockpit-context', true, projectId);
   const [isOutputModalOpen, setIsOutputModalOpen] = useState(false);
   const [isPhase1InputOpen, setIsPhase1InputOpen] = useState(false);
   const [isPhase6InputOpen, setIsPhase6InputOpen] = useState(false);
