@@ -28,6 +28,7 @@ from .phase6_chapter_writing import (
     Phase6SceneBriefWorkflow,
     Phase6FirstDraftWorkflow,
     Phase6ImprovementPlanWorkflow,
+    Phase6ApplyImprovementPlanWorkflow,
     Phase6FinalWorkflow,
 )
 from .phase7_compilation import Phase7FinalCompilationWorkflow
@@ -57,6 +58,7 @@ async def run_worker():
             Phase6SceneBriefWorkflow,
             Phase6FirstDraftWorkflow,
             Phase6ImprovementPlanWorkflow,
+            Phase6ApplyImprovementPlanWorkflow,
             Phase6FinalWorkflow,
             Phase7FinalCompilationWorkflow,
         ],

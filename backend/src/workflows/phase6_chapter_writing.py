@@ -900,6 +900,75 @@ class Phase6ImprovementPlanWorkflow:
 
 
 @workflow.defn
+class Phase6ApplyImprovementPlanWorkflow:
+    def __init__(self) -> None:
+        self._current_status: str = "starting"
+
+    @workflow.query
+    def get_current_status(self) -> str:
+        return self._current_status
+
+    @workflow.run
+    async def run(self, input: Phase6Input) -> Phase6StepOutput:
+        self._current_status = "loading_context"
+
+        context_bundle_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, "phase1_outputs/context_bundle.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=2),
+        )
+
+        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        first_draft_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/first_draft.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+        improvement_plan_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/improvement_plan.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+
+        context_bundle = await context_bundle_fut
+        first_draft = await first_draft_fut
+        improvement_plan = await improvement_plan_fut
+
+        self._current_status = "applying_improvement_plan"
+
+        revised_draft = await workflow.execute_activity(
+            llm_generate_activity,
+            args=[
+                "default",
+                "default",
+                """You are an expert reviser. Apply plans precisely while preserving voice.""",
+                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<improvement_plan>\n{improvement_plan}\n</improvement_plan>\n\n<draft>\n{first_draft}\n</draft>\n\nRevise the chapter by implementing the improvement plan.\nOutput ONLY the revised chapter in Markdown and start with this exact heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
+                0.6,
+                12000,
+                input.project_id,
+                "phase6-apply-improvement-plan",
+            ],
+            start_to_close_timeout=workflow.timedelta(minutes=10),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+
+        self._current_status = "saving_revised_draft"
+
+        await workflow.execute_activity(
+            save_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/revised_draft.md", revised_draft],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+
+        self._current_status = "completed"
+        return Phase6StepOutput(artifact=revised_draft, status="completed")
+
+
+@workflow.defn
 class Phase6FinalWorkflow:
     def __init__(self) -> None:
         self._current_status: str = "starting"
@@ -937,6 +1006,21 @@ class Phase6FinalWorkflow:
         scene_brief = await scene_brief_fut
         first_draft = await first_draft_fut
 
+        draft_source = "first_draft"
+        draft_text = first_draft
+        try:
+            revised_draft = await workflow.execute_activity(
+                load_artifact_activity,
+                args=[input.project_id, f"{chapter_dir}/revised_draft.md"],
+                start_to_close_timeout=workflow.timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            )
+            if isinstance(revised_draft, str) and revised_draft.strip():
+                draft_source = "revised_draft"
+                draft_text = revised_draft
+        except Exception:
+            pass
+
         improvement_plan = ""
         try:
             improvement_plan = await workflow.execute_activity(
@@ -951,7 +1035,9 @@ class Phase6FinalWorkflow:
         self._current_status = "generating_final"
 
         plan_block = (
-            f"\n\n<improvement_plan>\n{improvement_plan}\n</improvement_plan>\n" if improvement_plan.strip() else ""
+            f"\n\n<improvement_plan>\n{improvement_plan}\n</improvement_plan>\n"
+            if improvement_plan.strip() and draft_source == "first_draft"
+            else ""
         )
 
         final_chapter = await workflow.execute_activity(
@@ -960,7 +1046,7 @@ class Phase6FinalWorkflow:
                 "default",
                 "default",
                 """You are an expert reviser. Produce a publication-ready final chapter while preserving voice.""",
-                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\n<draft>\n{first_draft}\n</draft>{plan_block}\n\nIf an improvement_plan is present, apply it. Otherwise, do a light polish pass for clarity, pacing, voice, and continuity.\n\nOutput ONLY the final chapter in Markdown and start with this exact heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
+                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\n<draft>\n{draft_text}\n</draft>{plan_block}\n\nIf an improvement_plan is present, apply it. Otherwise, do a light polish pass for clarity, pacing, voice, and continuity.\n\nOutput ONLY the final chapter in Markdown and start with this exact heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
                 0.6,
                 12000,
                 input.project_id,

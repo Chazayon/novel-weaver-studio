@@ -148,7 +148,7 @@ export function MarkdownEditor({
   ];
 
   return (
-    <div className={cn("flex flex-col h-full glass-card", className)}>
+    <div className={cn("flex flex-col min-h-[360px] glass-card", className)}>
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-1 p-2 border-b border-border bg-muted/20">
         <div className="flex items-center gap-0.5">
@@ -232,10 +232,10 @@ export function MarkdownEditor({
       </div>
 
       {/* Editor / Preview */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden min-h-0 flex">
         {isPreview ? (
           <div 
-            className="h-full overflow-y-auto p-4 md:p-6 prose prose-invert max-w-none"
+            className="flex-1 overflow-y-auto p-4 md:p-6 prose prose-invert max-w-none"
             dangerouslySetInnerHTML={{ __html: renderMarkdown(value) }}
           />
         ) : (
@@ -244,7 +244,7 @@ export function MarkdownEditor({
             value={value}
             onChange={(e) => handleChange(e.target.value)}
             placeholder={placeholder}
-            className="h-full resize-none bg-transparent border-0 focus-visible:ring-0 font-mono text-sm leading-relaxed p-4 md:p-6"
+            className="flex-1 resize-none bg-transparent border-0 focus-visible:ring-0 font-mono text-sm leading-relaxed p-4 md:p-6"
           />
         )}
       </div>

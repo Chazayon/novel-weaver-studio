@@ -427,6 +427,7 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
                 Phase6SceneBriefWorkflow,
                 Phase6FirstDraftWorkflow,
                 Phase6ImprovementPlanWorkflow,
+                Phase6ApplyImprovementPlanWorkflow,
                 Phase6FinalWorkflow,
                 Phase6Input,
             )
@@ -463,6 +464,14 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
             elif step in {"improve-plan", "improvement-plan", "improveplan", "improvementplan"}:
                 step_workflow = Phase6ImprovementPlanWorkflow.run
                 step_label = "improve-plan"
+            elif step in {
+                "apply-improvement-plan",
+                "apply-plan",
+                "applyimprovementplan",
+                "applyplan",
+            }:
+                step_workflow = Phase6ApplyImprovementPlanWorkflow.run
+                step_label = "apply-improvement-plan"
             elif step in {"final", "final-draft", "finaldraft"}:
                 step_workflow = Phase6FinalWorkflow.run
                 step_label = "final"

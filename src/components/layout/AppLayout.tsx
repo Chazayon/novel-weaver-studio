@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, Home, Layers, FileText, Download, Sparkles, SlidersHorizontal } from 'lucide-react';
+import { BookOpen, Home, Layers, FileText, Download, Sparkles, SlidersHorizontal, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface AppLayoutProps {
@@ -11,6 +11,7 @@ const navItems = [
   { path: '/', icon: Home, label: 'Projects' },
   { path: '/cockpit', icon: Layers, label: 'Workflow' },
   { path: '/chapter-studio', icon: FileText, label: 'Chapter Studio' },
+  { path: '/phase6-wizard', icon: Wand2, label: 'Phase 6 Wizard' },
   { path: '/compile', icon: Download, label: 'Compile' },
   { path: '/llm-settings', icon: SlidersHorizontal, label: 'LLM Settings' },
 ];
