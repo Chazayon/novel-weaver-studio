@@ -30,6 +30,51 @@ from ..vault import storage_manager, novel_vault
 router = APIRouter(prefix="/api", tags=["api"])
 
 
+def _artifact_exists(project_id: str, path: str) -> bool:
+    try:
+        novel_vault.novel_read_text(project_id, path)
+        return True
+    except Exception:
+        return False
+
+
+def _infer_project_phase_state(project_id: str, state: dict) -> tuple[list[int], int, int]:
+    chapters_data = state.get("chapters", [])
+    total_chapters = state.get("total_chapters")
+    if not isinstance(total_chapters, int) or total_chapters <= 0:
+        total_chapters = len(chapters_data)
+
+    chapters_completed = 0
+    for chapter in chapters_data:
+        chapter_num = chapter.get("number")
+        if chapter_num is None:
+            continue
+        if _artifact_exists(project_id, f"phase6_outputs/chapter_{chapter_num}/final.md"):
+            chapters_completed += 1
+
+    phase_completed_map: dict[int, bool] = {
+        1: (
+            _artifact_exists(project_id, "phase1_outputs/genre_tropes.md")
+            and _artifact_exists(project_id, "phase1_outputs/style_sheet.md")
+            and _artifact_exists(project_id, "phase1_outputs/context_bundle.md")
+        ),
+        2: _artifact_exists(project_id, "phase2_outputs/series_outline.md"),
+        3: _artifact_exists(project_id, "phase3_outputs/call_sheet.md"),
+        4: (
+            _artifact_exists(project_id, "phase4_outputs/characters.md")
+            and _artifact_exists(project_id, "phase4_outputs/worldbuilding.md")
+        ),
+        5: _artifact_exists(project_id, "phase5_outputs/outline.md"),
+        6: total_chapters > 0 and chapters_completed >= total_chapters,
+        7: _artifact_exists(project_id, "exports/FINAL_MANUSCRIPT.md"),
+    }
+
+    phases_completed = [p for p in range(1, 8) if phase_completed_map.get(p, False)]
+    current_phase = next((p for p in range(1, 8) if p not in phases_completed), 7)
+
+    return phases_completed, current_phase, chapters_completed
+
+
 @router.get("/health")
 async def health_check():
     """Health check endpoint."""
@@ -77,9 +122,11 @@ async def list_projects():
             manifest = project_data["manifest"]
             metadata = manifest.get("metadata", {})
             state = manifest.get("state", {})
-            
+
+            inferred_completed, inferred_current_phase, _ = _infer_project_phase_state(project_data["id"], state)
+
             # Calculate progress based on completed phases
-            phases_completed = len(state.get("phases_completed", []))
+            phases_completed = len(inferred_completed)
             progress = (phases_completed / 7) * 100
             
             projects.append(
@@ -91,7 +138,7 @@ async def list_projects():
                     seriesLength=metadata.get("series_length", 20),
                     createdAt=manifest.get("created_at", ""),
                     updatedAt=manifest.get("updated_at", ""),
-                    currentPhase=state.get("current_phase", 1),
+                    currentPhase=inferred_current_phase,
                     progress=progress,
                 )
             )
@@ -108,8 +155,10 @@ async def get_project(project_id: str):
         manifest = storage_manager.get_project_manifest(project_id)
         metadata = manifest.get("metadata", {})
         state = manifest.get("state", {})
-        
-        phases_completed = len(state.get("phases_completed", []))
+
+        inferred_completed, inferred_current_phase, _ = _infer_project_phase_state(project_id, state)
+
+        phases_completed = len(inferred_completed)
         progress = (phases_completed / 7) * 100
         
         return ProjectResponse(
@@ -120,7 +169,7 @@ async def get_project(project_id: str):
             seriesLength=metadata.get("series_length", 20),
             createdAt=manifest.get("created_at", ""),
             updatedAt=manifest.get("updated_at", ""),
-            currentPhase=state.get("current_phase", 1),
+            currentPhase=inferred_current_phase,
             progress=progress,
         )
     except FileNotFoundError:
@@ -1036,11 +1085,13 @@ async def get_project_progress(project_id: str):
         manifest = storage_manager.get_project_manifest(project_id)
         state = manifest.get("state", {})
         chapters_data = state.get("chapters", [])
-        
+
+        inferred_completed, inferred_current_phase, chapters_completed = _infer_project_phase_state(project_id, state)
+
         # Calculate phase progress
-        phases_completed = state.get("phases_completed", [])
+        phases_completed = inferred_completed
         phases = []
-        
+
         for phase_num in range(1, 8):
             if phase_num in phases_completed:
                 phases.append(PhaseProgress(
@@ -1050,11 +1101,32 @@ async def get_project_progress(project_id: str):
                     started_at=None,  # TODO: Track this
                     completed_at=None,  # TODO: Track this
                 ))
-            elif phase_num == state.get("current_phase"):
+            elif phase_num == 6:
+                total_chapters = state.get("total_chapters")
+                if not isinstance(total_chapters, int) or total_chapters <= 0:
+                    total_chapters = len(chapters_data)
+                if total_chapters > 0 and chapters_completed > 0:
+                    progress = min(99.0, float(chapters_completed / total_chapters) * 100.0)
+                    phases.append(PhaseProgress(
+                        phase=phase_num,
+                        status=PhaseStatus.IN_PROGRESS,
+                        progress=progress,
+                        started_at=None,
+                        completed_at=None,
+                    ))
+                else:
+                    phases.append(PhaseProgress(
+                        phase=phase_num,
+                        status=PhaseStatus.NOT_STARTED,
+                        progress=0.0,
+                        started_at=None,
+                        completed_at=None,
+                    ))
+            elif phase_num == inferred_current_phase:
                 phases.append(PhaseProgress(
                     phase=phase_num,
                     status=PhaseStatus.IN_PROGRESS,
-                    progress=50.0,  # Rough estimate
+                    progress=50.0,
                     started_at=None,
                     completed_at=None,
                 ))
@@ -1066,17 +1138,6 @@ async def get_project_progress(project_id: str):
                     started_at=None,
                     completed_at=None,
                 ))
-        
-        # Count completed chapters
-        chapters_completed = 0
-        for chapter in chapters_data:
-            chapter_num = chapter.get("number")
-            chapter_dir = f"phase6_outputs/chapter_{chapter_num}"
-            try:
-                novel_vault.novel_read_text(project_id, f"{chapter_dir}/final.md")
-                chapters_completed += 1
-            except:
-                pass
         
         # Calculate overall progress
         phase_weight = 0.7  # 70% weight to phases

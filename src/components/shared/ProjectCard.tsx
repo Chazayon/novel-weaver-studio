@@ -111,7 +111,7 @@ export function ProjectCard({ project, onClick, isArchived, onArchiveToggle, onD
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">Progress</span>
-          <span className="font-medium text-primary">{project.progress}%</span>
+          <span className="font-medium text-primary">{Number(project.progress || 0).toFixed(1)}%</span>
         </div>
         <Progress value={project.progress} className="h-2 bg-muted" />
       </div>

@@ -1,5 +1,11 @@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 import type { Phase } from '@/lib/mockData';
 import { AlertCircle, CheckCircle2, Edit, Eye, FileText, Loader2, Play, RefreshCw, XCircle } from 'lucide-react';
 
@@ -102,7 +108,7 @@ export function WorkflowPhaseCard({
               {currentPhaseProgress !== undefined && (
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <p className="text-xs text-muted-foreground">Progress: {Math.round(currentPhaseProgress || 0)}%</p>
+                    <p className="text-xs text-muted-foreground">Progress: {Number(currentPhaseProgress || 0).toFixed(1)}%</p>
                   </div>
                   <div className="w-full bg-muted/50 rounded-full h-2">
                     <div
@@ -133,45 +139,56 @@ export function WorkflowPhaseCard({
         </div>
       )}
 
-      {/* Required inputs */}
-      <div className="mb-6">
-        <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-          Required Inputs
-          <span className="text-xs text-muted-foreground">({inputsStatus.completed}/{inputsStatus.total} ready)</span>
-        </h3>
-        <div className="space-y-2">
-          {activePhase.requiredInputs.map((input, index) => {
-            const isReady = index < inputsStatus.completed;
-            return (
-              <div key={input} className="flex items-center gap-3 p-2 lg:p-3 rounded-lg bg-muted/30">
-                {isReady ? (
-                  <CheckCircle2 className="w-4 h-4 text-status-success shrink-0" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-status-warning shrink-0" />
-                )}
-                <span className={`text - sm ${isReady ? 'text-foreground' : 'text-muted-foreground'}`}>{input}</span>
-                {!isReady && (
-                  <Badge variant="warning" className="ml-auto text-xs">
-                    Missing
-                  </Badge>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <Accordion type="multiple" className="mb-6 rounded-lg border border-border/50 bg-muted/20">
+        <AccordionItem value="inputs" className="border-border/50">
+          <AccordionTrigger className="px-4 hover:no-underline">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Required Inputs</span>
+              <span className="text-xs text-muted-foreground">({inputsStatus.completed}/{inputsStatus.total} ready)</span>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-4">
+            <div className="space-y-2">
+              {activePhase.requiredInputs.map((input, index) => {
+                const isReady = index < inputsStatus.completed;
+                return (
+                  <div key={input} className="flex items-center gap-3 p-2 lg:p-3 rounded-lg bg-muted/30">
+                    {isReady ? (
+                      <CheckCircle2 className="w-4 h-4 text-status-success shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-status-warning shrink-0" />
+                    )}
+                    <span className={`text-sm ${isReady ? 'text-foreground' : 'text-muted-foreground'}`}>{input}</span>
+                    {!isReady && (
+                      <Badge variant="warning" className="ml-auto text-xs">
+                        Missing
+                      </Badge>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
 
-      {/* Expected outputs */}
-      <div className="mb-6">
-        <h3 className="text-sm font-medium mb-3">Expected Outputs</h3>
-        <div className="flex flex-wrap gap-2">
-          {activePhase.outputs.map((output) => (
-            <Badge key={output} variant="outline" className="text-xs">
-              {output}
-            </Badge>
-          ))}
-        </div>
-      </div>
+        <AccordionItem value="outputs" className="border-border/50">
+          <AccordionTrigger className="px-4 hover:no-underline">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Expected Outputs</span>
+              <span className="text-xs text-muted-foreground">({activePhase.outputs.length})</span>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-4">
+            <div className="flex flex-wrap gap-2">
+              {activePhase.outputs.map((output) => (
+                <Badge key={output} variant="outline" className="text-xs">
+                  {output}
+                </Badge>
+              ))}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
 
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-2 lg:gap-3 pt-4 border-t border-border">

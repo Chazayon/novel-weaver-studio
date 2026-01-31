@@ -66,10 +66,11 @@ export function ArtifactCard({ artifact, compact, onOpen, onCopy, onTogglePin }:
   }
 
   return (
-    <div className="glass-card-hover p-4">
-      <div className="flex items-start gap-3">
+    <div className="glass-card-hover p-4 group relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+      <div className="relative flex items-start gap-3">
         <div className={cn(
-          "w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0",
+          "w-10 h-10 rounded-xl bg-background/40 border border-border/50 flex items-center justify-center shrink-0 shadow-sm",
           config.color
         )}>
           <Icon className="w-5 h-5" />
@@ -112,8 +113,12 @@ export function ArtifactCard({ artifact, compact, onOpen, onCopy, onTogglePin }:
         </DropdownMenu>
       </div>
 
-      <div className="mt-3 p-3 rounded-lg bg-muted/50 text-xs text-muted-foreground font-mono line-clamp-3">
-        {artifact.content.substring(0, 150)}...
+      <div className="relative mt-3 rounded-lg border border-border/50 bg-background/30 p-3">
+        <div className="text-xs text-muted-foreground font-mono line-clamp-4 whitespace-pre-wrap">
+          {artifact.content && artifact.content.trim().length > 0
+            ? `${artifact.content.substring(0, 220)}...`
+            : 'Open to preview content...'}
+        </div>
       </div>
     </div>
   );

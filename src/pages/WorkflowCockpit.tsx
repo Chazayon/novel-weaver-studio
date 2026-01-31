@@ -61,6 +61,8 @@ import { WorkflowRecentArtifactsGrid } from '@/components/workflow/WorkflowRecen
 import { WorkflowPhaseCard } from '@/components/workflow/WorkflowPhaseCard';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
+const PHASE1_INPUTS_KEY_PREFIX = 'novel-weaver:phase1-inputs';
+
 export default function WorkflowCockpit() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -133,6 +135,41 @@ export default function WorkflowCockpit() {
   // Load saved outputs and phase outputs from localStorage when projectId changes
   const { savedOutputs, setSavedOutputsAndPersist, phaseOutputs, setPhaseOutputsAndPersist } = useCockpitStorage<PhaseCompletionData>(projectId);
 
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      const raw = localStorage.getItem(`${PHASE1_INPUTS_KEY_PREFIX}:${projectId}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        setPhase1FormData((prev) => ({ ...prev, ...(parsed as Record<string, string>) }));
+      }
+    } catch {
+      // ignore
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      localStorage.setItem(`${PHASE1_INPUTS_KEY_PREFIX}:${projectId}`, JSON.stringify(phase1FormData));
+    } catch {
+      // ignore
+    }
+  }, [projectId, phase1FormData]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const meta = projects?.find((p) => p.id === projectId);
+    if (!meta) return;
+    setPhase1FormData((prev) => {
+      const next = { ...prev };
+      if (!next.genre && meta.genre) next.genre = meta.genre;
+      if (!next.book_title && meta.title) next.book_title = meta.title;
+      return next;
+    });
+  }, [projectId, projects]);
+
   // Watch for pending inputs and open review dialog
   useEffect(() => {
     if (!pendingInputs || pendingInputs.length === 0) return;
@@ -170,13 +207,16 @@ export default function WorkflowCockpit() {
   // Convert backend progress data to Phase format
   const phases: Phase[] = progressData?.phases.map(p => {
     const phaseInfo = getPhaseInfo(p.phase);
+    const isPhaseRunning = runningPhases.has(p.phase);
     return {
       id: p.phase,
       name: phaseInfo.name,
       description: phaseInfo.description,
-      status: p.status === 'completed' ? 'completed' as const :
-        p.status === 'in-progress' ? 'in-progress' as const :
-          'not-started' as const,
+      status: p.status === 'completed'
+        ? ('completed' as const)
+        : isPhaseRunning
+          ? ('in-progress' as const)
+          : ('not-started' as const),
       duration: phaseInfo.duration,
       outputs: phaseInfo.outputs,
       requiredInputs: phaseInfo.requiredInputs,
@@ -221,9 +261,9 @@ export default function WorkflowCockpit() {
       completed = phase.requiredInputs.length;
     } else if (phase.id === 1) {
       // For Phase 1, check if form data has been filled
-      if (phase1FormData.genre) completed++;
-      if (phase1FormData.book_title) completed++;
-      if (phase1FormData.initial_ideas) completed++;
+      if ((phase1FormData.genre || '').trim()) completed++;
+      if ((phase1FormData.book_title || '').trim()) completed++;
+      if ((phase1FormData.initial_ideas || '').trim()) completed++;
     } else if (phase.status === 'in-progress' && !hasPendingInput) {
       // Phase is running but not waiting for input - inputs must have been provided
       completed = phase.requiredInputs.length;
@@ -276,6 +316,22 @@ export default function WorkflowCockpit() {
   };
 
   const inputsStatus = getRequiredInputsStatus(activePhase);
+
+  useEffect(() => {
+    if (!progressData) return;
+    setRunningPhases((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set(prev);
+      for (const phaseNum of prev) {
+        const phaseData = progressData.phases.find((p) => p.phase === phaseNum);
+        if (!phaseData) continue;
+        if (phaseData.status === 'completed' || phaseData.status === 'failed') {
+          next.delete(phaseNum);
+        }
+      }
+      return next;
+    });
+  }, [progressData]);
 
   // Elapsed time tracking
   useEffect(() => {
