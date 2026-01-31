@@ -26,6 +26,7 @@ interface PhaseCompletionDialogProps {
   onSaveOutput: (key: string, name: string, content: string) => void;
   onClose: () => void;
   onContinue: () => void;
+  onOpenChapterStudio?: () => void;
 }
 
 export function PhaseCompletionDialog({
@@ -40,6 +41,7 @@ export function PhaseCompletionDialog({
   onSaveOutput,
   onClose,
   onContinue,
+  onOpenChapterStudio,
 }: PhaseCompletionDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -330,7 +332,12 @@ export function PhaseCompletionDialog({
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          {currentPhase < 7 && (
+          {currentPhase === 5 && onOpenChapterStudio && (
+            <Button onClick={onOpenChapterStudio}>
+              Open Chapter Studio <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          )}
+          {currentPhase < 7 && currentPhase !== 5 && (
             <Button onClick={onContinue}>
               Continue to Phase {currentPhase + 1} <ChevronRight className="w-4 h-4 ml-2" />
             </Button>

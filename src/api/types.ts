@@ -86,7 +86,7 @@ export interface ChapterDetail {
     lastUpdated?: string;
     hasSceneBrief: boolean;
     hasFirstDraft: boolean;
-    hasImprovementPlan?: boolean;
+    hasImprovementPlan: boolean;
     hasFinal: boolean;
 }
 

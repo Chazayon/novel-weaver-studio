@@ -23,7 +23,13 @@ from .phase2_brainstorming import Phase2BrainstormingWorkflow
 from .phase3_call_sheet import Phase3CallSheetWorkflow
 from .phase4_characters import Phase4CharactersWorldbuildingWorkflow
 from .phase5_chapter_outline import Phase5ChapterOutlineWorkflow
-from .phase6_chapter_writing import Phase6SingleChapterWorkflow
+from .phase6_chapter_writing import (
+    Phase6SingleChapterWorkflow,
+    Phase6SceneBriefWorkflow,
+    Phase6FirstDraftWorkflow,
+    Phase6ImprovementPlanWorkflow,
+    Phase6FinalWorkflow,
+)
 from .phase7_compilation import Phase7FinalCompilationWorkflow
 
 
@@ -48,6 +54,10 @@ async def run_worker():
             Phase4CharactersWorldbuildingWorkflow,
             Phase5ChapterOutlineWorkflow,
             Phase6SingleChapterWorkflow,
+            Phase6SceneBriefWorkflow,
+            Phase6FirstDraftWorkflow,
+            Phase6ImprovementPlanWorkflow,
+            Phase6FinalWorkflow,
             Phase7FinalCompilationWorkflow,
         ],
         activities=[

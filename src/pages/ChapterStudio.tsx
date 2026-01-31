@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChapterRow } from '@/components/shared/ChapterRow';
@@ -9,6 +9,15 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { usePanelState } from '@/hooks/usePanelState';
 import {
   Select,
@@ -30,7 +39,8 @@ import {
   ChevronRight,
   BookOpen,
   List,
-  Settings
+  Settings,
+  Loader2
 } from 'lucide-react';
 
 const tones = [
@@ -56,21 +66,163 @@ export default function ChapterStudio() {
   const [draftContent, setDraftContent] = useState('');
   const [improvementPlanContent, setImprovementPlanContent] = useState('');
   const [finalContent, setFinalContent] = useState('');
+  
+  // Previous chapter content for continuity
+  const [previousChapterContent, setPreviousChapterContent] = useState('');
 
   // Core continuity artifacts (outline / characters / worldbuilding / etc.)
   const [coreArtifacts, setCoreArtifacts] = useState<Artifact[]>([]);
 
   // API hooks
-  const { data: chaptersData, isLoading: chaptersLoading } = useChapters(projectId || undefined);
+  const {
+    data: chaptersData,
+    isLoading: chaptersLoading,
+    refetch: refetchChapters,
+  } = useChapters(projectId || undefined);
 
   const [selectedChapterNumber, setSelectedChapterNumber] = useState(1);
-  const { data: selectedChapterData } = useChapter(projectId || undefined, selectedChapterNumber);
+  const {
+    data: selectedChapterData,
+    refetch: refetchSelectedChapter,
+  } = useChapter(projectId || undefined, selectedChapterNumber);
 
   const [targetWordCount, setTargetWordCount] = useState([3000]);
   const [selectedTone, setSelectedTone] = useState('neutral');
   const [isRunning, setIsRunning] = useState(false);
   const [isChaptersOpen, toggleChaptersOpen] = usePanelState('chapter-studio-chapters', true);
   const [isControlsOpen, toggleControlsOpen] = usePanelState('chapter-studio-controls', true);
+  const [currentWorkflowStep, setCurrentWorkflowStep] = useState<string | null>(null);
+  const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null);
+  const [runningChapterNumber, setRunningChapterNumber] = useState<number | null>(null);
+
+  const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false);
+  const [reviewContent, setReviewContent] = useState('');
+  const [reviewDescription, setReviewDescription] = useState('');
+  const [reviewExpectedOutputs, setReviewExpectedOutputs] = useState<string[]>([]);
+  const [reviewInputs, setReviewInputs] = useState<Record<string, string>>({});
+
+  const [isNextChapterDialogOpen, setIsNextChapterDialogOpen] = useState(false);
+
+  const refreshChapterArtifacts = useCallback(
+    async (chapterNumber: number, step?: string | null) => {
+      if (!projectId) return;
+      const chapterDir = `phase6_outputs/chapter_${chapterNumber}`;
+
+      const normalizedStep = (step || '').trim().toLowerCase();
+      const shouldFetchAll = normalizedStep === '';
+
+      const shouldFetchSceneBrief = shouldFetchAll || normalizedStep === 'scene-brief';
+      const shouldFetchDraft = shouldFetchAll || normalizedStep === 'draft';
+      const shouldFetchImprovePlan = shouldFetchAll || normalizedStep === 'improve-plan';
+      const shouldFetchFinal = shouldFetchAll || normalizedStep === 'final';
+
+      if (shouldFetchSceneBrief) {
+        try {
+          const res = await apiClient.getArtifact(projectId, `${chapterDir}/scene_brief.md`);
+          setSceneBriefContent(res.content);
+        } catch {
+          // best-effort
+        }
+      }
+
+      if (shouldFetchDraft) {
+        try {
+          const res = await apiClient.getArtifact(projectId, `${chapterDir}/first_draft.md`);
+          setDraftContent(res.content);
+        } catch {
+          // best-effort
+        }
+      }
+
+      if (shouldFetchImprovePlan) {
+        try {
+          const res = await apiClient.getArtifact(projectId, `${chapterDir}/improvement_plan.md`);
+          setImprovementPlanContent(res.content);
+        } catch {
+          // best-effort
+        }
+      }
+
+      if (shouldFetchFinal) {
+        try {
+          const res = await apiClient.getArtifact(projectId, `${chapterDir}/final.md`);
+          setFinalContent(res.content);
+        } catch {
+          // best-effort
+        }
+      }
+    },
+    [projectId]
+  );
+
+  useEffect(() => {
+    if (!projectId || !currentWorkflowId) return;
+
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const status = await apiClient.getPhaseStatus(projectId, 6, currentWorkflowId);
+        if (cancelled) return;
+
+        const pending = status.outputs?.pending_review as
+          | { content?: string; description?: string; expectedOutputs?: string[] }
+          | undefined;
+        if (pending?.content) {
+          setReviewContent(pending.content || '');
+          setReviewDescription(pending.description || 'Please review the generated content.');
+          setReviewExpectedOutputs(pending.expectedOutputs || []);
+          setReviewInputs((prev) => {
+            const next: Record<string, string> = { ...prev };
+            for (const key of pending.expectedOutputs || []) {
+              if (next[key] === undefined) next[key] = '';
+            }
+            return next;
+          });
+          setIsReviewDialogOpen(true);
+        }
+
+        if (status.status === 'completed') {
+          const ch = runningChapterNumber ?? selectedChapterNumber;
+          await refreshChapterArtifacts(ch, currentWorkflowStep);
+          void refetchChapters();
+          void refetchSelectedChapter();
+          if (cancelled) return;
+          setIsRunning(false);
+          setCurrentWorkflowStep(null);
+          setCurrentWorkflowId(null);
+          setRunningChapterNumber(null);
+        }
+
+        if (status.status === 'failed') {
+          setIsRunning(false);
+          setCurrentWorkflowStep(null);
+          setCurrentWorkflowId(null);
+          setRunningChapterNumber(null);
+        }
+      } catch (error) {
+        console.error('Failed to poll workflow status:', error);
+      }
+    };
+
+    const interval = setInterval(poll, 3000);
+    void poll();
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [
+    projectId,
+    currentWorkflowId,
+    refreshChapterArtifacts,
+    refetchChapters,
+    refetchSelectedChapter,
+    runningChapterNumber,
+    selectedChapterNumber,
+    currentWorkflowStep,
+  ]);
 
   function getArtifactType(name: string): Artifact['type'] {
     const n = name.toLowerCase();
@@ -200,11 +352,31 @@ export default function ChapterStudio() {
         }
       }
 
-      try {
-        const res = await apiClient.getArtifact(projectId, `${chapterDir}/improvement_plan.md`);
-        if (!cancelled) setImprovementPlanContent(res.content);
-      } catch {
-        // best-effort
+      if (selectedChapterData?.hasImprovementPlan) {
+        try {
+          const res = await apiClient.getArtifact(projectId, `${chapterDir}/improvement_plan.md`);
+          if (!cancelled) setImprovementPlanContent(res.content);
+        } catch {
+          // best-effort
+        }
+      }
+      
+      // Load previous chapter final content for continuity
+      if (selectedChapterNumber > 1) {
+        const prevChapter = chaptersData?.find(ch => ch.number === selectedChapterNumber - 1);
+        if (prevChapter?.hasFinal) {
+          try {
+            const prevChapterDir = `phase6_outputs/chapter_${selectedChapterNumber - 1}`;
+            const res = await apiClient.getArtifact(projectId, `${prevChapterDir}/final.md`);
+            if (!cancelled) setPreviousChapterContent(res.content);
+          } catch {
+            setPreviousChapterContent('');
+          }
+        } else {
+          setPreviousChapterContent('');
+        }
+      } else {
+        setPreviousChapterContent('');
       }
     };
 
@@ -212,7 +384,15 @@ export default function ChapterStudio() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedChapterNumber, selectedChapterData?.hasFinal, selectedChapterData?.hasFirstDraft, selectedChapterData?.hasSceneBrief]);
+  }, [
+    projectId,
+    selectedChapterNumber,
+    selectedChapterData?.hasFinal,
+    selectedChapterData?.hasFirstDraft,
+    selectedChapterData?.hasSceneBrief,
+    selectedChapterData?.hasImprovementPlan,
+    chaptersData,
+  ]);
 
   // Convert backend chapter data to frontend format
   const chapters: Chapter[] = (chaptersData || []).map(ch => ({
@@ -222,7 +402,7 @@ export default function ChapterStudio() {
     wordCount: ch.wordCount || 0,
     sceneBrief: ch.hasSceneBrief ? 'completed' : 'not-started',
     draft: ch.hasFirstDraft ? 'completed' : 'not-started',
-    improvePlan: 'not-started' as const,
+    improvePlan: ch.hasImprovementPlan ? 'completed' : 'not-started',
     final: ch.hasFinal ? 'completed' : 'not-started'
   }));
 
@@ -317,9 +497,107 @@ export default function ChapterStudio() {
     final: finalContent,
   };
 
-  const handleRunStep = (step: string) => {
+  const handleSaveArtifact = async (tab: string, content: string) => {
+    if (!projectId) return;
+
+    const chapterDir = `phase6_outputs/chapter_${selectedChapterNumber}`;
+    let artifactPath = '';
+
+    switch (tab) {
+      case 'scene-brief':
+        artifactPath = `${chapterDir}/scene_brief.md`;
+        setSceneBriefContent(content);
+        break;
+      case 'draft':
+        artifactPath = `${chapterDir}/first_draft.md`;
+        setDraftContent(content);
+        break;
+      case 'improve-plan':
+        artifactPath = `${chapterDir}/improvement_plan.md`;
+        setImprovementPlanContent(content);
+        break;
+      case 'final':
+        artifactPath = `${chapterDir}/final.md`;
+        setFinalContent(content);
+        break;
+      default:
+        return;
+    }
+
+    try {
+      await apiClient.updateArtifact(projectId, artifactPath, { content });
+      void refetchChapters();
+      void refetchSelectedChapter();
+    } catch (error) {
+      console.error('Failed to save artifact:', error);
+    }
+  };
+
+  const handleApproveArtifact = async (tab: string, content: string) => {
+    await handleSaveArtifact(tab, content);
+  };
+
+  const handlePromoteToNext = async (_fromTab: string) => {
+    // Promotion is handled in the EditorTabs UI (tab navigation).
+  };
+
+  const handleSaveAsFinal = async (content: string) => {
+    if (!projectId) return;
+
+    const chapterDir = `phase6_outputs/chapter_${selectedChapterNumber}`;
+    const artifactPath = `${chapterDir}/final.md`;
+
+    try {
+      await apiClient.updateArtifact(projectId, artifactPath, { content });
+      setFinalContent(content);
+      void refetchChapters();
+      void refetchSelectedChapter();
+
+      if (chapters.length > 0 && selectedChapterNumber < chapters.length) {
+        setIsNextChapterDialogOpen(true);
+      }
+    } catch (error) {
+      console.error('Failed to save final chapter:', error);
+    }
+  };
+
+  const handleGenerateStep = async (step: string) => {
+    if (!projectId) return;
+
     setIsRunning(true);
-    setTimeout(() => setIsRunning(false), 2000);
+    setCurrentWorkflowStep(step);
+    setRunningChapterNumber(selectedChapterNumber);
+
+    try {
+      const result = await apiClient.executePhase(projectId, 6, {
+        phase: 6,
+        inputs: {
+          chapter_number: selectedChapterNumber,
+          chapter_title: selectedChapter?.title || '',
+          step: step,
+          target_word_count: targetWordCount[0],
+          tone: selectedTone,
+          previous_chapter: previousChapterContent || 'NONE',
+        },
+      });
+      setCurrentWorkflowId(result.workflowId);
+    } catch (error) {
+      console.error('Failed to generate step:', error);
+      setIsRunning(false);
+      setCurrentWorkflowStep(null);
+      setCurrentWorkflowId(null);
+      setRunningChapterNumber(null);
+    }
+  };
+
+  const handleSubmitReview = async () => {
+    if (!currentWorkflowId) return;
+    try {
+      await apiClient.respondToWorkflow(currentWorkflowId, { inputs: reviewInputs });
+      setIsReviewDialogOpen(false);
+    } catch (error) {
+      console.error('Failed to submit review response:', error);
+    }
   };
 
   const completedChapters = chapters.filter(c => c.final === 'completed').length;
@@ -327,7 +605,71 @@ export default function ChapterStudio() {
 
   return (
     <AppLayout>
-      <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+      <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Review</DialogTitle>
+            <DialogDescription>{reviewDescription}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <Textarea
+              value={reviewContent}
+              readOnly
+              className="min-h-[240px] font-mono text-sm bg-muted/30 border-border"
+            />
+
+            {reviewExpectedOutputs.map((key) => (
+              <div key={key} className="space-y-2">
+                <Label>{key}</Label>
+                <Textarea
+                  value={reviewInputs[key] || ''}
+                  onChange={(e) => setReviewInputs((prev) => ({ ...prev, [key]: e.target.value }))}
+                  className="min-h-[80px] bg-muted/30 border-border"
+                />
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsReviewDialogOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={handleSubmitReview} disabled={!currentWorkflowId}>
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isNextChapterDialogOpen} onOpenChange={setIsNextChapterDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Final saved</DialogTitle>
+            <DialogDescription>
+              Move to the next chapter?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsNextChapterDialogOpen(false)}>
+              Stay
+            </Button>
+            <Button
+              onClick={() => {
+                setIsNextChapterDialogOpen(false);
+                if (selectedChapterNumber < chapters.length) {
+                  setSelectedChapterNumber(selectedChapterNumber + 1);
+                }
+              }}
+              disabled={selectedChapterNumber >= chapters.length}
+            >
+              Next chapter
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left - Chapter list */}
         <CollapsiblePanel
           title="Chapters"
@@ -357,7 +699,7 @@ export default function ChapterStudio() {
         </CollapsiblePanel>
 
         {/* Center - Editor workspace */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden min-h-0">
           {/* Chapter header */}
           <div className="p-3 lg:p-4 border-b border-border flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 lg:gap-4 min-w-0">
@@ -402,12 +744,20 @@ export default function ChapterStudio() {
           </div>
 
           {/* Editor tabs */}
-          <div className="flex-1 p-2 lg:p-4 overflow-hidden">
+          <div className="flex-1 overflow-hidden min-h-0 h-full flex flex-col">
             <EditorTabs
               sceneBrief={chapterContent.sceneBrief}
               draft={chapterContent.draft}
               improvePlan={chapterContent.improvePlan}
               final={chapterContent.final}
+              onSave={handleSaveArtifact}
+              onApprove={handleApproveArtifact}
+              onPromoteToNext={handlePromoteToNext}
+              onSaveAsFinal={handleSaveAsFinal}
+              onGenerateStep={handleGenerateStep}
+              projectId={projectId}
+              chapterNumber={selectedChapterNumber}
+              isGenerating={isRunning}
             />
           </div>
         </div>
@@ -434,8 +784,27 @@ export default function ChapterStudio() {
                       Ch. {selectedChapter.number - 1}: {chapters[selectedChapter.number - 2]?.title}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-3">
-                    The previous chapter ended with Elena discovering the hidden message in the ancient tome...
+                  {previousChapterContent ? (
+                    <p className="text-xs text-muted-foreground line-clamp-3">
+                      {previousChapterContent.slice(0, 200)}...
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">
+                      Previous chapter not yet completed
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {selectedChapter.number === 1 && (
+              <div>
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
+                  Starting Point
+                </Label>
+                <div className="glass-card p-3">
+                  <p className="text-xs text-muted-foreground">
+                    This is Chapter 1. No previous chapter context needed.
                   </p>
                 </div>
               </div>
@@ -494,71 +863,59 @@ export default function ChapterStudio() {
                 </div>
               </div>
             </div>
-
-            {/* Run buttons */}
-            <div className="space-y-2 pt-4 border-t border-border">
-              <Button
-                className="w-full justify-start"
-                variant="outline"
-                onClick={() => handleRunStep('scene-brief')}
-                disabled={isRunning || selectedChapter.sceneBrief === 'completed'}
-              >
-                <FileText className="w-4 h-4" />
-                Generate Scene Brief
-                {selectedChapter.sceneBrief === 'completed' && (
-                  <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
-                )}
-              </Button>
-
-              <Button
-                className="w-full justify-start"
-                variant="outline"
-                onClick={() => handleRunStep('draft')}
-                disabled={isRunning || selectedChapter.sceneBrief !== 'completed'}
-              >
-                <Sparkles className="w-4 h-4" />
-                Draft Chapter
-                {selectedChapter.draft === 'completed' && (
-                  <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
-                )}
-              </Button>
-
-              <Button
-                className="w-full justify-start"
-                variant="outline"
-                onClick={() => handleRunStep('improve')}
-                disabled={isRunning || selectedChapter.draft !== 'completed'}
-              >
-                <Play className="w-4 h-4" />
-                Analyze & Improve
-                {selectedChapter.improvePlan === 'completed' && (
-                  <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
-                )}
-              </Button>
-
-              <Button
-                className="w-full justify-start"
-                variant="outline"
-                onClick={() => handleRunStep('final')}
-                disabled={isRunning || selectedChapter.improvePlan !== 'completed'}
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                Apply Improvements
-                {selectedChapter.final === 'completed' && (
-                  <CheckCircle2 className="w-4 h-4 ml-auto text-status-success" />
-                )}
-              </Button>
-
-              <div className="pt-2">
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={() => handleRunStep('full')}
-                  disabled={isRunning || selectedChapter.final === 'completed'}
-                >
-                  <Zap className="w-4 h-4" />
-                  {isRunning ? 'Running...' : 'Run Full Pipeline'}
-                </Button>
+            
+            {/* Workflow Status */}
+            <div className="pt-4 border-t border-border">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">
+                Workflow Progress
+              </Label>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  {sceneBriefContent ? (
+                    <CheckCircle2 className="w-4 h-4 text-status-success" />
+                  ) : (
+                    <div className="w-4 h-4 rounded-full border-2 border-muted" />
+                  )}
+                  <span className={sceneBriefContent ? 'text-foreground' : 'text-muted-foreground'}>
+                    Scene Brief
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  {draftContent ? (
+                    <CheckCircle2 className="w-4 h-4 text-status-success" />
+                  ) : (
+                    <div className="w-4 h-4 rounded-full border-2 border-muted" />
+                  )}
+                  <span className={draftContent ? 'text-foreground' : 'text-muted-foreground'}>
+                    First Draft
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  {improvementPlanContent ? (
+                    <CheckCircle2 className="w-4 h-4 text-status-success" />
+                  ) : (
+                    <div className="w-4 h-4 rounded-full border-2 border-muted" />
+                  )}
+                  <span className={improvementPlanContent ? 'text-foreground' : 'text-muted-foreground'}>
+                    Improvement Plan
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  {finalContent ? (
+                    <CheckCircle2 className="w-4 h-4 text-status-success" />
+                  ) : (
+                    <div className="w-4 h-4 rounded-full border-2 border-muted" />
+                  )}
+                  <span className={finalContent ? 'text-foreground' : 'text-muted-foreground'}>
+                    Final Version
+                  </span>
+                </div>
+              </div>
+              
+              <div className="mt-4 p-3 rounded-lg bg-muted/30">
+                <p className="text-xs text-muted-foreground">
+                  Use the editor to generate, review, and approve each step. The workflow guides you through the process.
+                </p>
               </div>
             </div>
           </div>

@@ -125,6 +125,7 @@ class ChapterDetail(BaseModel):
     last_updated: Optional[str] = Field(default=None, alias="lastUpdated")
     has_scene_brief: bool = Field(default=False, alias="hasSceneBrief")
     has_first_draft: bool = Field(default=False, alias="hasFirstDraft")
+    has_improvement_plan: bool = Field(default=False, alias="hasImprovementPlan")
     has_final: bool = Field(default=False, alias="hasFinal")
     
     class Config:

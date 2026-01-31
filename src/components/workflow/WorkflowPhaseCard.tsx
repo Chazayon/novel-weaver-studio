@@ -48,7 +48,7 @@ export function WorkflowPhaseCard({
   return (
     <div className="glass-card p-4 lg:p-6 mb-6 lg:mb-8">
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
-        <div>
+        <div className="flex-1">
           <Badge
             variant={
               activePhase.status === 'completed'
@@ -65,10 +65,15 @@ export function WorkflowPhaseCard({
                 : 'Not Started'}
           </Badge>
           <p className="text-xs lg:text-sm text-muted-foreground mt-2">Estimated duration: {activePhase.duration}</p>
+          {showOpenChapterStudio && (
+            <p className="text-xs lg:text-sm text-muted-foreground mt-2 italic">
+              Use Chapter Studio to write chapters through the scene brief → draft → improve → final pipeline.
+            </p>
+          )}
         </div>
 
         {showOpenChapterStudio && (
-          <Button onClick={onOpenChapterStudio} size="sm" className="w-full sm:w-auto">
+          <Button onClick={onOpenChapterStudio} size="lg" className="w-full sm:w-auto">
             <FileText className="w-4 h-4" />
             Open Chapter Studio
           </Button>
@@ -170,28 +175,34 @@ export function WorkflowPhaseCard({
 
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-2 lg:gap-3 pt-4 border-t border-border">
-        <Button
-          size="default"
-          disabled={activePhase.status === 'completed' || isRunning || !hasProject}
-          onClick={onRunPhase}
-          className="min-w-[120px] lg:min-w-[140px]"
-        >
-          {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-          <span className="hidden sm:inline">{isRunning ? 'Running...' : activePhase.status === 'in-progress' ? 'Continue Phase' : 'Run Phase'}</span>
-          <span className="sm:hidden">{isRunning ? '...' : 'Run'}</span>
-        </Button>
+        {!showOpenChapterStudio && (
+          <>
+            <Button
+              size="default"
+              disabled={activePhase.status === 'completed' || isRunning || !hasProject}
+              onClick={onRunPhase}
+              className="min-w-[120px] lg:min-w-[140px]"
+            >
+              {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              <span className="hidden sm:inline">{isRunning ? 'Running...' : activePhase.status === 'in-progress' ? 'Continue Phase' : 'Run Phase'}</span>
+              <span className="sm:hidden">{isRunning ? '...' : 'Run'}</span>
+            </Button>
+            <Button variant="ghost" size="sm" disabled={!canRerun} onClick={onRunPhase}>
+              <RefreshCw className={`w-4 h-4 ${isRunning ? 'animate-spin' : ''}`} />
+              <span className="hidden lg:inline">Re-run</span>
+            </Button>
+          </>
+        )}
         <Button variant="outline" size="sm" disabled={!canViewOutputs} onClick={onViewOutputs}>
           <Eye className="w-4 h-4" />
           <span className="hidden md:inline">View Outputs</span>
         </Button>
-        <Button variant="outline" size="sm" disabled={!canEditOutputs} onClick={onEditInEditor}>
-          <Edit className="w-4 h-4" />
-          <span className="hidden md:inline">Edit in Editor</span>
-        </Button>
-        <Button variant="ghost" size="sm" disabled={!canRerun} onClick={onRunPhase}>
-          <RefreshCw className={`w - 4 h - 4 ${isRunning ? 'animate-spin' : ''}`} />
-          <span className="hidden lg:inline">Re-run</span>
-        </Button>
+        {!showOpenChapterStudio && (
+          <Button variant="outline" size="sm" disabled={!canEditOutputs} onClick={onEditInEditor}>
+            <Edit className="w-4 h-4" />
+            <span className="hidden md:inline">Edit in Editor</span>
+          </Button>
+        )}
       </div>
     </div>
   );

@@ -52,7 +52,13 @@ class NovelWeaverClient {
         this.client.interceptors.response.use(
             (response) => response,
             (error: AxiosError) => {
-                console.error('API Error:', error.response?.data);
+                const status = error.response?.status;
+                const url = (error.config?.url || '').toString();
+                const isArtifact404 = status === 404 && url.includes('/artifacts/');
+
+                if (!isArtifact404) {
+                    console.error('API Error:', error.response?.data);
+                }
 
                 if (error.response) {
                     // Server responded with error status

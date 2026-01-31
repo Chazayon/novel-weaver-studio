@@ -303,7 +303,14 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
             )
         
         elif phase == 6:
-            from ..workflows.phase6_chapter_writing import Phase6SingleChapterWorkflow, Phase6Input
+            from ..workflows.phase6_chapter_writing import (
+                Phase6SingleChapterWorkflow,
+                Phase6SceneBriefWorkflow,
+                Phase6FirstDraftWorkflow,
+                Phase6ImprovementPlanWorkflow,
+                Phase6FinalWorkflow,
+                Phase6Input,
+            )
             
             # Phase 6 requires chapter number and title
             if not request.inputs.get("chapter_number") or not request.inputs.get("chapter_title"):
@@ -320,17 +327,49 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
                 auto_approve_improvements=request.inputs.get("auto_approve_improvements", False),
                 auto_approve_final=request.inputs.get("auto_approve_final", False),
             )
-            
-            workflow_id = f"phase6-{project_id}-ch{workflow_input.chapter_number}-{uuid.uuid4()}"
-            
-            handle = await client.start_workflow(
-                Phase6SingleChapterWorkflow.run,
-                workflow_input,
-                id=workflow_id,
-                task_queue=settings.temporal_task_queue,
-                execution_timeout=timedelta(hours=2), # Longer for writing
-                run_timeout=timedelta(hours=2),
-            )
+
+            step_raw = request.inputs.get("step")
+            step = str(step_raw).strip().lower() if step_raw is not None else ""
+            step = step.replace("_", "-")
+
+            step_workflow = None
+            step_label = None
+
+            if step in {"scene-brief", "scenebrief"}:
+                step_workflow = Phase6SceneBriefWorkflow.run
+                step_label = "scene-brief"
+            elif step in {"draft", "first-draft", "firstdraft"}:
+                step_workflow = Phase6FirstDraftWorkflow.run
+                step_label = "draft"
+            elif step in {"improve-plan", "improvement-plan", "improveplan", "improvementplan"}:
+                step_workflow = Phase6ImprovementPlanWorkflow.run
+                step_label = "improve-plan"
+            elif step in {"final", "final-draft", "finaldraft"}:
+                step_workflow = Phase6FinalWorkflow.run
+                step_label = "final"
+
+            if step_workflow is None:
+                workflow_id = f"phase6-{project_id}-ch{workflow_input.chapter_number}-{uuid.uuid4()}"
+                await client.start_workflow(
+                    Phase6SingleChapterWorkflow.run,
+                    workflow_input,
+                    id=workflow_id,
+                    task_queue=settings.temporal_task_queue,
+                    execution_timeout=timedelta(hours=2),  # Longer for writing
+                    run_timeout=timedelta(hours=2),
+                )
+            else:
+                workflow_id = (
+                    f"phase6-{project_id}-ch{workflow_input.chapter_number}-{step_label}-{uuid.uuid4()}"
+                )
+                await client.start_workflow(
+                    step_workflow,
+                    workflow_input,
+                    id=workflow_id,
+                    task_queue=settings.temporal_task_queue,
+                    execution_timeout=timedelta(hours=2),
+                    run_timeout=timedelta(hours=2),
+                )
             
             return WorkflowStatus(
                 workflowId=workflow_id,
@@ -814,6 +853,7 @@ async def list_chapters(project_id: str):
             chapter_dir = f"phase6_outputs/chapter_{chapter_num}"
             has_scene_brief = False
             has_first_draft = False
+            has_improvement_plan = False
             has_final = False
             word_count = None
             last_updated = None
@@ -829,6 +869,13 @@ async def list_chapters(project_id: str):
                 # Check for first draft
                 novel_vault.novel_read_text(project_id, f"{chapter_dir}/first_draft.md")
                 has_first_draft = True
+            except:
+                pass
+
+            try:
+                # Check for improvement plan
+                novel_vault.novel_read_text(project_id, f"{chapter_dir}/improvement_plan.md")
+                has_improvement_plan = True
             except:
                 pass
             
@@ -858,6 +905,7 @@ async def list_chapters(project_id: str):
                 last_updated=last_updated,
                 has_scene_brief=has_scene_brief,
                 has_first_draft=has_first_draft,
+                has_improvement_plan=has_improvement_plan,
                 has_final=has_final,
             ))
         
@@ -888,6 +936,7 @@ async def get_chapter(project_id: str, chapter_number: int):
         chapter_dir = f"phase6_outputs/chapter_{chapter_number}"
         has_scene_brief = False
         has_first_draft = False
+        has_improvement_plan = False
         has_final = False
         word_count = None
         last_updated = None
@@ -901,6 +950,12 @@ async def get_chapter(project_id: str, chapter_number: int):
         try:
             novel_vault.novel_read_text(project_id, f"{chapter_dir}/first_draft.md")
             has_first_draft = True
+        except:
+            pass
+
+        try:
+            novel_vault.novel_read_text(project_id, f"{chapter_dir}/improvement_plan.md")
+            has_improvement_plan = True
         except:
             pass
         
@@ -928,6 +983,7 @@ async def get_chapter(project_id: str, chapter_number: int):
             last_updated=last_updated,
             has_scene_brief=has_scene_brief,
             has_first_draft=has_first_draft,
+            has_improvement_plan=has_improvement_plan,
             has_final=has_final,
         )
     except FileNotFoundError:

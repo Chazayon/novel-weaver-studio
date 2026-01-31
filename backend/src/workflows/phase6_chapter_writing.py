@@ -600,12 +600,13 @@ Output only the revised chapter in Markdown with the same heading.""",
         if auto_approve:
             workflow.logger.info("Auto-approve final mode: skipping final review")
             return final_chapter
-        
-        # Human final review loop
+
         max_revisions = 3
         for revision_count in range(max_revisions):
-            workflow.logger.info(f"Requesting final review (attempt {revision_count + 1})")
-            
+            workflow.logger.info(
+                f"Requesting final review (attempt {revision_count + 1})"
+            )
+
             decision_prompt = f"""## Final Chapter Review
 
 {final_chapter}
@@ -621,17 +622,16 @@ Type **APPROVE** to lock it in, or type **REVISE** to provide notes and generate
                 expected_outputs=["decision"],
                 pending_content=decision_prompt,
             )
-            
-            # Check decision
+
             decision_text = decision.get("decision", "").strip().upper()
-            
+
             if "APPROVE" in decision_text:
                 workflow.logger.info("Final chapter approved")
                 break
-            
+
             if "REVISE" in decision_text:
                 workflow.logger.info("Final revision requested")
-                
+
                 revision_input = await self._await_human_input(
                     description="Final Revision Notes",
                     expected_outputs=["revision_notes"],
@@ -639,17 +639,16 @@ Type **APPROVE** to lock it in, or type **REVISE** to provide notes and generate
 
 Paste your final revision notes (bullets are best). The agent will revise the FINAL chapter accordingly.""",
                 )
-                
+
                 revision_notes = revision_input.get("revision_notes", "")
-                
-                # Revise final chapter
+
                 workflow.logger.info("Revising final chapter")
-                
+
                 final_chapter = await workflow.execute_activity(
                     llm_generate_activity,
                     args=[
-                    "default",
-                    "default",
+                        "default",
+                        "default",
                         """You perform a targeted revision without changing what doesn't need changing.""",
                         f"""<context_bundle>
 {context_bundle}
@@ -671,12 +670,288 @@ Output only the revised chapter in Markdown with the same heading.""",
                     start_to_close_timeout=workflow.timedelta(minutes=10),
                     retry_policy=RetryPolicy(maximum_attempts=3),
                 )
-                
-                # Loop back for another review
+
                 continue
-            
-            # If neither APPROVE nor REVISE, treat as approve by default
-            workflow.logger.warning(f"Unexpected decision: {decision_text}, treating as APPROVE")
+
+            workflow.logger.warning(
+                f"Unexpected decision: {decision_text}, treating as APPROVE"
+            )
             break
-        
+
         return final_chapter
+
+
+@dataclass
+class Phase6StepOutput:
+    artifact: str
+    status: str
+
+
+@workflow.defn
+class Phase6SceneBriefWorkflow:
+    def __init__(self) -> None:
+        self._current_status: str = "starting"
+
+    @workflow.query
+    def get_current_status(self) -> str:
+        return self._current_status
+
+    @workflow.run
+    async def run(self, input: Phase6Input) -> Phase6StepOutput:
+        self._current_status = "loading_context"
+
+        context_bundle_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, "phase1_outputs/context_bundle.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=2),
+        )
+
+        previous_chapter_text_fut = workflow.start_activity(
+            get_previous_chapter_activity,
+            args=[input.project_id, input.chapter_number],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=2),
+        )
+
+        context_bundle = await context_bundle_fut
+        previous_chapter_text = await previous_chapter_text_fut
+        chapter_notes = input.chapter_notes or ""
+
+        self._current_status = "generating_scene_brief"
+
+        scene_brief = await workflow.execute_activity(
+            llm_generate_activity,
+            args=[
+                "default",
+                "default",
+                """You are a scene planning expert who creates detailed, actionable scene briefs for fiction writing.""",
+                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<previous_chapter_text>\n{previous_chapter_text}\n</previous_chapter_text>\n\n<chapter_notes>\n{chapter_notes}\n</chapter_notes>\n\nCreate a detailed scene brief for:\n\n## Chapter {input.chapter_number}: {input.chapter_title}\n\nRequirements:\n- Stay consistent with the OUTLINE, CHARACTERS, WORLDBUILDING, STYLE_SHEET and GENRE_TROPES in the bundle.\n- If previous_chapter_text != NONE, include a short \"continuity carryover\" section.\n- Include: POV, setting, time, scene goal, conflict, beats, emotional arc, and ending hook.\n- Include a short \"DO / DON'T\" list from the style sheet and prohibited words.\n\nOutput as Markdown only.""",
+                0.6,
+                5000,
+            ],
+            start_to_close_timeout=workflow.timedelta(minutes=5),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+
+        self._current_status = "saving_scene_brief"
+
+        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        await workflow.execute_activity(
+            save_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/scene_brief.md", scene_brief],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+
+        self._current_status = "completed"
+        return Phase6StepOutput(artifact=scene_brief, status="completed")
+
+
+@workflow.defn
+class Phase6FirstDraftWorkflow:
+    def __init__(self) -> None:
+        self._current_status: str = "starting"
+
+    @workflow.query
+    def get_current_status(self) -> str:
+        return self._current_status
+
+    @workflow.run
+    async def run(self, input: Phase6Input) -> Phase6StepOutput:
+        self._current_status = "loading_context"
+
+        context_bundle_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, "phase1_outputs/context_bundle.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=2),
+        )
+
+        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        scene_brief_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/scene_brief.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+
+        context_bundle = await context_bundle_fut
+        scene_brief = await scene_brief_fut
+
+        self._current_status = "generating_first_draft"
+
+        first_draft = await workflow.execute_activity(
+            llm_generate_activity,
+            args=[
+                "default",
+                "default",
+                """You are an expert novelist.\nFollow the style sheet and avoid prohibited words.""",
+                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\nWrite Chapter {input.chapter_number}: {input.chapter_title} as complete prose.\n\nRequirements:\n- Respect the style sheet (voice, POV, tense, rhythm).\n- Avoid prohibited words and AI-isms.\n- Keep pacing tight: prioritize scene goal + conflict + escalation.\n- End on the hook specified in the scene brief.\n\nOutput only the full chapter in Markdown with a heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
+                0.75,
+                12000,
+            ],
+            start_to_close_timeout=workflow.timedelta(minutes=10),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+
+        self._current_status = "saving_first_draft"
+
+        await workflow.execute_activity(
+            save_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/first_draft.md", first_draft],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+
+        self._current_status = "completed"
+        return Phase6StepOutput(artifact=first_draft, status="completed")
+
+
+@workflow.defn
+class Phase6ImprovementPlanWorkflow:
+    def __init__(self) -> None:
+        self._current_status: str = "starting"
+
+    @workflow.query
+    def get_current_status(self) -> str:
+        return self._current_status
+
+    @workflow.run
+    async def run(self, input: Phase6Input) -> Phase6StepOutput:
+        self._current_status = "loading_context"
+
+        context_bundle_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, "phase1_outputs/context_bundle.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=2),
+        )
+
+        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        scene_brief_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/scene_brief.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+        first_draft_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/first_draft.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+
+        context_bundle = await context_bundle_fut
+        scene_brief = await scene_brief_fut
+        first_draft = await first_draft_fut
+
+        self._current_status = "generating_improvement_plan"
+
+        improvement_plan = await workflow.execute_activity(
+            llm_generate_activity,
+            args=[
+                "default",
+                "default",
+                """You are a developmental editor and line editor. You identify the highest-impact improvements.""",
+                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\n<first_draft>\n{first_draft}\n</first_draft>\n\nCreate an improvement plan with:\n1) Continuity issues (with prior chapter/outline)\n2) Character voice issues\n3) Pacing issues\n4) Show-don't-tell upgrades (specific line-level suggestions)\n5) Dialogue/subtext upgrades\n6) Any prohibited word / AI-ism cleanup\n\nOutput as Markdown:\n# IMPROVEMENT PLAN\n- ...""",
+                0.3,
+                5000,
+            ],
+            start_to_close_timeout=workflow.timedelta(minutes=5),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+
+        self._current_status = "saving_improvement_plan"
+
+        await workflow.execute_activity(
+            save_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/improvement_plan.md", improvement_plan],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+
+        self._current_status = "completed"
+        return Phase6StepOutput(artifact=improvement_plan, status="completed")
+
+
+@workflow.defn
+class Phase6FinalWorkflow:
+    def __init__(self) -> None:
+        self._current_status: str = "starting"
+
+    @workflow.query
+    def get_current_status(self) -> str:
+        return self._current_status
+
+    @workflow.run
+    async def run(self, input: Phase6Input) -> Phase6StepOutput:
+        self._current_status = "loading_context"
+
+        context_bundle_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, "phase1_outputs/context_bundle.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=2),
+        )
+
+        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        scene_brief_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/scene_brief.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+        first_draft_fut = workflow.start_activity(
+            load_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/first_draft.md"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+
+        context_bundle = await context_bundle_fut
+        scene_brief = await scene_brief_fut
+        first_draft = await first_draft_fut
+
+        improvement_plan = ""
+        try:
+            improvement_plan = await workflow.execute_activity(
+                load_artifact_activity,
+                args=[input.project_id, f"{chapter_dir}/improvement_plan.md"],
+                start_to_close_timeout=workflow.timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            )
+        except Exception:
+            improvement_plan = ""
+
+        self._current_status = "generating_final"
+
+        plan_block = (
+            f"\n\n<improvement_plan>\n{improvement_plan}\n</improvement_plan>\n" if improvement_plan.strip() else ""
+        )
+
+        final_chapter = await workflow.execute_activity(
+            llm_generate_activity,
+            args=[
+                "default",
+                "default",
+                """You are an expert reviser. Produce a publication-ready final chapter while preserving voice.""",
+                f"""<context_bundle>\n{context_bundle}\n</context_bundle>\n\n<scene_brief>\n{scene_brief}\n</scene_brief>\n\n<draft>\n{first_draft}\n</draft>{plan_block}\n\nIf an improvement_plan is present, apply it. Otherwise, do a light polish pass for clarity, pacing, voice, and continuity.\n\nOutput ONLY the final chapter in Markdown and start with this exact heading:\n## Chapter {input.chapter_number}: {input.chapter_title}""",
+                0.6,
+                12000,
+            ],
+            start_to_close_timeout=workflow.timedelta(minutes=10),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+
+        self._current_status = "saving_final"
+
+        await workflow.execute_activity(
+            save_artifact_activity,
+            args=[input.project_id, f"{chapter_dir}/final.md", final_chapter],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+
+        self._current_status = "completed"
+        return Phase6StepOutput(artifact=final_chapter, status="completed")

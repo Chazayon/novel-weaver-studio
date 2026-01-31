@@ -957,6 +957,16 @@ export default function WorkflowCockpit() {
             }, 1000);
           }
         }}
+        onOpenChapterStudio={() => {
+          setIsCompletionDialogOpen(false);
+          if (projectId) {
+            navigate(`/chapter-studio?projectId=${projectId}`);
+            toast({
+              title: 'Opening Chapter Studio',
+              description: 'Start writing your chapters in the Chapter Studio.',
+            });
+          }
+        }}
       />
 
       {/* Artifact Viewing Dialog */}
