@@ -192,6 +192,7 @@ export function PhaseCompletionDialog({
                     if (typeof obj.characters === 'string') return { title: 'Character Profiles', content: obj.characters };
                     if (typeof obj.worldbuilding === 'string') return { title: 'Worldbuilding', content: obj.worldbuilding };
                     // Phase 5: outline (from Phase5Output)
+                    if (typeof obj.story_bible === 'string') return { title: 'Story Bible', content: obj.story_bible };
                     if (typeof obj.outline === 'string') return { title: 'Chapter Outline', content: obj.outline };
                     if (typeof obj.chapter_outline === 'string') return { title: 'Chapter Outline', content: obj.chapter_outline };
                     // Phase 6: final chapter
@@ -238,7 +239,7 @@ export function PhaseCompletionDialog({
                       }
                     }
 
-                    if (currentPhase === 6) {
+                    if (currentPhase === 7) {
                       const sections = [
                         { title: 'Scene Brief', content: typeof obj.scene_brief === 'string' ? obj.scene_brief : '' },
                         { title: 'First Draft', content: typeof obj.first_draft === 'string' ? obj.first_draft : '' },
@@ -343,6 +344,9 @@ export function PhaseCompletionDialog({
                       } else if (typeof obj.worldbuilding === 'string') {
                         content = obj.worldbuilding;
                         outputName = 'Worldbuilding';
+                      } else if (typeof obj.story_bible === 'string') {
+                        content = obj.story_bible;
+                        outputName = 'Story Bible';
                       } else if (typeof obj.outline === 'string') {
                         content = obj.outline;
                         outputName = 'Chapter Outline';
@@ -392,12 +396,12 @@ export function PhaseCompletionDialog({
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          {currentPhase === 5 && onOpenChapterStudio && (
+          {currentPhase === 6 && onOpenChapterStudio && (
             <Button onClick={onOpenChapterStudio}>
               Open Chapter Studio <ChevronRight className="w-4 h-4 ml-2" />
             </Button>
           )}
-          {currentPhase < 7 && currentPhase !== 5 && (
+          {currentPhase < 8 && currentPhase !== 6 && (
             <Button onClick={onContinue}>
               Continue to Phase {currentPhase + 1} <ChevronRight className="w-4 h-4 ml-2" />
             </Button>

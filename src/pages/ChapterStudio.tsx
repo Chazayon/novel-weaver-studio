@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useProjectContext } from '@/hooks/useProjectContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChapterRow } from '@/components/shared/ChapterRow';
 import { EditorTabs } from '@/components/shared/EditorTabs';
@@ -53,8 +53,7 @@ const tones = [
 ];
 
 export default function ChapterStudio() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const projectId = searchParams.get('projectId') || searchParams.get('project');
+  const { projectId, setProjectId, getLastProjectId } = useProjectContext();
 
   const { data: projects, isLoading: projectsLoading } = useProjects();
 
@@ -106,7 +105,8 @@ export default function ChapterStudio() {
   const refreshChapterArtifacts = useCallback(
     async (chapterNumber: number, step?: string | null) => {
       if (!projectId) return;
-      const chapterDir = `phase6_outputs/chapter_${chapterNumber}`;
+      const chapterDir = `phase7_outputs/chapter_${chapterNumber}`;
+      const legacyChapterDir = `phase6_outputs/chapter_${chapterNumber}`;
 
       const normalizedStep = (step || '').trim().toLowerCase();
       const shouldFetchAll = normalizedStep === '';
@@ -121,7 +121,12 @@ export default function ChapterStudio() {
           const res = await apiClient.getArtifact(projectId, `${chapterDir}/scene_brief.md`);
           setSceneBriefContent(res.content);
         } catch {
-          // best-effort
+          try {
+            const res = await apiClient.getArtifact(projectId, `${legacyChapterDir}/scene_brief.md`);
+            setSceneBriefContent(res.content);
+          } catch {
+            // best-effort
+          }
         }
       }
 
@@ -130,7 +135,12 @@ export default function ChapterStudio() {
           const res = await apiClient.getArtifact(projectId, `${chapterDir}/first_draft.md`);
           setDraftContent(res.content);
         } catch {
-          // best-effort
+          try {
+            const res = await apiClient.getArtifact(projectId, `${legacyChapterDir}/first_draft.md`);
+            setDraftContent(res.content);
+          } catch {
+            // best-effort
+          }
         }
       }
 
@@ -139,7 +149,12 @@ export default function ChapterStudio() {
           const res = await apiClient.getArtifact(projectId, `${chapterDir}/improvement_plan.md`);
           setImprovementPlanContent(res.content);
         } catch {
-          // best-effort
+          try {
+            const res = await apiClient.getArtifact(projectId, `${legacyChapterDir}/improvement_plan.md`);
+            setImprovementPlanContent(res.content);
+          } catch {
+            // best-effort
+          }
         }
       }
 
@@ -148,7 +163,12 @@ export default function ChapterStudio() {
           const res = await apiClient.getArtifact(projectId, `${chapterDir}/final.md`);
           setFinalContent(res.content);
         } catch {
-          // best-effort
+          try {
+            const res = await apiClient.getArtifact(projectId, `${legacyChapterDir}/final.md`);
+            setFinalContent(res.content);
+          } catch {
+            // best-effort
+          }
         }
       }
     },
@@ -163,7 +183,7 @@ export default function ChapterStudio() {
     const poll = async () => {
       if (cancelled) return;
       try {
-        const status = await apiClient.getPhaseStatus(projectId, 6, currentWorkflowId);
+        const status = await apiClient.getPhaseStatus(projectId, 7, currentWorkflowId);
         if (cancelled) return;
 
         const pending = status.outputs?.pending_review as
@@ -234,12 +254,16 @@ export default function ChapterStudio() {
     return 'other';
   }
 
-  // If opened without a projectId, auto-select the only project (if there is exactly one)
+  // If opened without a projectId, auto-select from last used or the only project
   useEffect(() => {
-    if (projectId) return;
-    if (!projects || projects.length !== 1) return;
-    setSearchParams({ projectId: projects[0].id });
-  }, [projectId, projects, setSearchParams]);
+    if (projectId || projectsLoading) return;
+    const lastProject = getLastProjectId();
+    if (lastProject && projects?.some(p => p.id === lastProject)) {
+      setProjectId(lastProject);
+    } else if (projects && projects.length === 1) {
+      setProjectId(projects[0].id);
+    }
+  }, [projectId, projects, projectsLoading, getLastProjectId, setProjectId]);
 
   // Load pinned/saved outputs from localStorage
   useEffect(() => {
@@ -265,7 +289,7 @@ export default function ChapterStudio() {
     const loadCore = async () => {
       if (!projectId) return;
       const specs: Array<{ path: string; name: string }> = [
-        { path: 'phase5_outputs/outline.md', name: 'Chapter Outline' },
+        { path: 'phase6_outputs/outline.md', name: 'Chapter Outline' },
         { path: 'phase4_outputs/characters.md', name: 'Character Profiles' },
         { path: 'phase4_outputs/worldbuilding.md', name: 'Worldbuilding' },
         { path: 'phase3_outputs/call_sheet.md', name: 'Call Sheet' },
@@ -287,7 +311,21 @@ export default function ChapterStudio() {
             pinned: true,
           });
         } catch {
-          // best-effort
+          if (spec.path === 'phase6_outputs/outline.md') {
+            try {
+              const res = await apiClient.getArtifact(projectId, 'phase5_outputs/outline.md');
+              loaded.push({
+                id: `core:phase5_outputs/outline.md`,
+                name: spec.name,
+                type: getArtifactType(spec.name),
+                content: res.content,
+                updatedAt: new Date(),
+                pinned: true,
+              });
+            } catch {
+              // best-effort
+            }
+          }
         }
       }
 
@@ -323,14 +361,20 @@ export default function ChapterStudio() {
       setImprovementPlanContent('');
       setFinalContent('');
 
-      const chapterDir = `phase6_outputs/chapter_${selectedChapterNumber}`;
+      const chapterDir = `phase7_outputs/chapter_${selectedChapterNumber}`;
+      const legacyChapterDir = `phase6_outputs/chapter_${selectedChapterNumber}`;
 
       if (selectedChapterData?.hasSceneBrief) {
         try {
           const res = await apiClient.getArtifact(projectId, `${chapterDir}/scene_brief.md`);
           if (!cancelled) setSceneBriefContent(res.content);
         } catch {
-          // best-effort
+          try {
+            const res = await apiClient.getArtifact(projectId, `${legacyChapterDir}/scene_brief.md`);
+            if (!cancelled) setSceneBriefContent(res.content);
+          } catch {
+            // best-effort
+          }
         }
       }
 
@@ -339,7 +383,12 @@ export default function ChapterStudio() {
           const res = await apiClient.getArtifact(projectId, `${chapterDir}/first_draft.md`);
           if (!cancelled) setDraftContent(res.content);
         } catch {
-          // best-effort
+          try {
+            const res = await apiClient.getArtifact(projectId, `${legacyChapterDir}/first_draft.md`);
+            if (!cancelled) setDraftContent(res.content);
+          } catch {
+            // best-effort
+          }
         }
       }
 
@@ -348,7 +397,12 @@ export default function ChapterStudio() {
           const res = await apiClient.getArtifact(projectId, `${chapterDir}/final.md`);
           if (!cancelled) setFinalContent(res.content);
         } catch {
-          // best-effort
+          try {
+            const res = await apiClient.getArtifact(projectId, `${legacyChapterDir}/final.md`);
+            if (!cancelled) setFinalContent(res.content);
+          } catch {
+            // best-effort
+          }
         }
       }
 
@@ -357,30 +411,35 @@ export default function ChapterStudio() {
           const res = await apiClient.getArtifact(projectId, `${chapterDir}/improvement_plan.md`);
           if (!cancelled) setImprovementPlanContent(res.content);
         } catch {
-          // best-effort
+          try {
+            const res = await apiClient.getArtifact(projectId, `${legacyChapterDir}/improvement_plan.md`);
+            if (!cancelled) setImprovementPlanContent(res.content);
+          } catch {
+            // best-effort
+          }
         }
       }
-      
-      // Load previous chapter final content for continuity
+
+      // Load previous chapter final content for continuity (try Phase 7 first, then legacy Phase 6)
       if (selectedChapterNumber > 1) {
-        const prevChapter = chaptersData?.find(ch => ch.number === selectedChapterNumber - 1);
-        if (prevChapter?.hasFinal) {
+        const prevNum = selectedChapterNumber - 1;
+        try {
+          const res = await apiClient.getArtifact(projectId, `phase7_outputs/chapter_${prevNum}/final.md`);
+          if (!cancelled) setPreviousChapterContent(res.content);
+        } catch {
           try {
-            const prevChapterDir = `phase6_outputs/chapter_${selectedChapterNumber - 1}`;
-            const res = await apiClient.getArtifact(projectId, `${prevChapterDir}/final.md`);
+            const res = await apiClient.getArtifact(projectId, `phase6_outputs/chapter_${prevNum}/final.md`);
             if (!cancelled) setPreviousChapterContent(res.content);
           } catch {
-            setPreviousChapterContent('');
+            if (!cancelled) setPreviousChapterContent('');
           }
-        } else {
-          setPreviousChapterContent('');
         }
       } else {
-        setPreviousChapterContent('');
+        if (!cancelled) setPreviousChapterContent('');
       }
     };
 
-    loadChapterArtifacts();
+    void loadChapterArtifacts();
     return () => {
       cancelled = true;
     };
@@ -395,7 +454,7 @@ export default function ChapterStudio() {
   ]);
 
   // Convert backend chapter data to frontend format
-  const chapters: Chapter[] = (chaptersData || []).map(ch => ({
+  const chapters: Chapter[] = (chaptersData || []).map((ch) => ({
     id: ch.number.toString(),
     number: ch.number,
     title: ch.title,
@@ -403,7 +462,7 @@ export default function ChapterStudio() {
     sceneBrief: ch.hasSceneBrief ? 'completed' : 'not-started',
     draft: ch.hasFirstDraft ? 'completed' : 'not-started',
     improvePlan: ch.hasImprovementPlan ? 'completed' : 'not-started',
-    final: ch.hasFinal ? 'completed' : 'not-started'
+    final: ch.hasFinal ? 'completed' : 'not-started',
   }));
 
   const selectedChapter = chapters.find(c => c.number === selectedChapterNumber) || chapters[0];
@@ -440,7 +499,7 @@ export default function ChapterStudio() {
                 <Label>Project</Label>
                 <Select
                   value={projectId || undefined}
-                  onValueChange={(val) => setSearchParams({ projectId: val })}
+                  onValueChange={(val) => setProjectId(val)}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select a project" />
@@ -483,7 +542,7 @@ export default function ChapterStudio() {
           <div className="text-center">
             <BookOpen className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             <h2 className="text-xl font-semibold mb-2">No Chapters Available</h2>
-            <p className="text-muted-foreground">Complete Phase 5 to generate your chapter outline first.</p>
+            <p className="text-muted-foreground">Complete Phase 6 to generate your chapter outline first.</p>
           </div>
         </div>
       </AppLayout>
@@ -500,7 +559,7 @@ export default function ChapterStudio() {
   const handleSaveArtifact = async (tab: string, content: string) => {
     if (!projectId) return;
 
-    const chapterDir = `phase6_outputs/chapter_${selectedChapterNumber}`;
+    const chapterDir = `phase7_outputs/chapter_${selectedChapterNumber}`;
     let artifactPath = '';
 
     switch (tab) {
@@ -544,7 +603,7 @@ export default function ChapterStudio() {
   const handleSaveAsFinal = async (content: string) => {
     if (!projectId) return;
 
-    const chapterDir = `phase6_outputs/chapter_${selectedChapterNumber}`;
+    const chapterDir = `phase7_outputs/chapter_${selectedChapterNumber}`;
     const artifactPath = `${chapterDir}/final.md`;
 
     try {
@@ -569,8 +628,8 @@ export default function ChapterStudio() {
     setRunningChapterNumber(selectedChapterNumber);
 
     try {
-      const result = await apiClient.executePhase(projectId, 6, {
-        phase: 6,
+      const result = await apiClient.executePhase(projectId, 7, {
+        phase: 7,
         inputs: {
           chapter_number: selectedChapterNumber,
           chapter_title: selectedChapter?.title || '',

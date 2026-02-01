@@ -5,23 +5,23 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { ChapterDetail } from '@/api/types';
 
-interface Phase6FormData {
+interface DraftingFormData {
   chapter_number: string;
   chapter_title: string;
 }
 
-interface Phase6InputDialogProps {
+interface DraftingInputDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  formData: Phase6FormData;
-  onFormDataChange: (next: Phase6FormData) => void;
+  formData: DraftingFormData;
+  onFormDataChange: (next: DraftingFormData) => void;
   chapters: ChapterDetail[];
   showChapterSelector: boolean;
   onCancel: () => void;
   onSubmit: () => void;
 }
 
-export function Phase6InputDialog({
+export function DraftingInputDialog({
   open,
   onOpenChange,
   formData,
@@ -30,14 +30,14 @@ export function Phase6InputDialog({
   showChapterSelector,
   onCancel,
   onSubmit,
-}: Phase6InputDialogProps) {
+}: DraftingInputDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="font-display text-2xl">Phase 6: Chapter Writing</DialogTitle>
+          <DialogTitle className="font-display text-2xl">Drafting Wizard (Phase 7)</DialogTitle>
           <DialogDescription>
-            Provide the chapter details to generate scene brief, draft, and final version.
+            Provide the chapter details to generate the scene brief, draft, and final version.
           </DialogDescription>
         </DialogHeader>
 

@@ -52,8 +52,14 @@ def _infer_project_phase_state(project_id: str, state: dict) -> tuple[list[int],
         chapter_num = chapter.get("number")
         if chapter_num is None:
             continue
-        if _artifact_exists(project_id, f"phase6_outputs/chapter_{chapter_num}/final.md"):
+        if _artifact_exists(project_id, f"phase7_outputs/chapter_{chapter_num}/final.md") or _artifact_exists(
+            project_id, f"phase6_outputs/chapter_{chapter_num}/final.md"
+        ):
             chapters_completed += 1
+
+    has_outline = _artifact_exists(project_id, "phase6_outputs/outline.md") or _artifact_exists(
+        project_id, "phase5_outputs/outline.md"
+    )
 
     phase_completed_map: dict[int, bool] = {
         1: (
@@ -67,13 +73,14 @@ def _infer_project_phase_state(project_id: str, state: dict) -> tuple[list[int],
             _artifact_exists(project_id, "phase4_outputs/characters.md")
             and _artifact_exists(project_id, "phase4_outputs/worldbuilding.md")
         ),
-        5: _artifact_exists(project_id, "phase5_outputs/outline.md"),
-        6: total_chapters > 0 and chapters_completed >= total_chapters,
-        7: _artifact_exists(project_id, "exports/FINAL_MANUSCRIPT.md"),
+        5: _artifact_exists(project_id, "phase5_outputs/story_bible.md") or has_outline,
+        6: has_outline,
+        7: total_chapters > 0 and chapters_completed >= total_chapters,
+        8: _artifact_exists(project_id, "exports/FINAL_MANUSCRIPT.md"),
     }
 
-    phases_completed = [p for p in range(1, 8) if phase_completed_map.get(p, False)]
-    current_phase = next((p for p in range(1, 8) if p not in phases_completed), 7)
+    phases_completed = [p for p in range(1, 9) if phase_completed_map.get(p, False)]
+    current_phase = next((p for p in range(1, 9) if p not in phases_completed), 8)
 
     return phases_completed, current_phase, chapters_completed
 
@@ -130,7 +137,7 @@ async def list_projects():
 
             # Calculate progress based on completed phases
             phases_completed = len(inferred_completed)
-            progress = (phases_completed / 7) * 100
+            progress = (phases_completed / 8) * 100
             
             projects.append(
                 ProjectResponse(
@@ -162,7 +169,7 @@ async def get_project(project_id: str):
         inferred_completed, inferred_current_phase, _ = _infer_project_phase_state(project_id, state)
 
         phases_completed = len(inferred_completed)
-        progress = (phases_completed / 7) * 100
+        progress = (phases_completed / 8) * 100
         
         return ProjectResponse(
             id=project_id,
@@ -267,7 +274,7 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
     """
     Start executing a workflow phase using Temporal.
     
-    Supports all 7 phases of the Novel Weaver Studio workflow.
+    Supports all 8 phases of the Novel Weaver Studio workflow.
     """
     try:
         # Verify project exists
@@ -402,7 +409,7 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
             )
         
         elif phase == 5:
-            from ..workflows.phase5_chapter_outline import Phase5ChapterOutlineWorkflow, Phase5Input
+            from ..workflows.phase5_story_bible import Phase5StoryBibleWorkflow, Phase5StoryBibleInput
             from ..workflows.phase5_context_bundle_curation import (
                 Phase5ContextBundleCurationWorkflow,
                 Phase5ContextBundleCurationInput,
@@ -433,23 +440,22 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
                 workflow_input = Phase5ContextBundleTagsInput(project_id=project_id)
                 timeout_hours = 1
             else:
-                workflow_input = Phase5Input(
+                workflow_input = Phase5StoryBibleInput(
                     project_id=project_id,
-                    outline_template=request.inputs.get("outline_template", "USE_BUNDLE"),
-                    auto_approve=request.inputs.get("auto_approve", False),
+                    extra_notes=request.inputs.get("extra_notes"),
                 )
 
             if step_workflow is None:
                 workflow_id = f"phase5-{project_id}-{uuid.uuid4()}"
                 await client.start_workflow(
-                    Phase5ChapterOutlineWorkflow.run,
+                    Phase5StoryBibleWorkflow.run,
                     workflow_input,
                     id=workflow_id,
                     task_queue=settings.temporal_task_queue,
                     execution_timeout=timedelta(hours=timeout_hours),
                     run_timeout=timedelta(hours=timeout_hours),
                 )
-                current_step = "Starting Phase 5: Chapter Outline Creation"
+                current_step = "Starting Phase 5: Story Bible Compilation"
             else:
                 workflow_id = f"phase5-{project_id}-{step_label}-{uuid.uuid4()}"
                 await client.start_workflow(
@@ -477,24 +483,51 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
             )
         
         elif phase == 6:
-            from ..workflows.phase6_chapter_writing import (
-                Phase6SingleChapterWorkflow,
-                Phase6SceneBriefWorkflow,
-                Phase6FirstDraftWorkflow,
-                Phase6ImprovementPlanWorkflow,
-                Phase6ApplyImprovementPlanWorkflow,
-                Phase6FinalWorkflow,
-                Phase6Input,
+            from ..workflows.phase6_chapter_outline import Phase5ChapterOutlineWorkflow, Phase5Input
+
+            workflow_input = Phase5Input(
+                project_id=project_id,
+                outline_template=request.inputs.get("outline_template", "USE_BUNDLE"),
+                auto_approve=request.inputs.get("auto_approve", False),
             )
-            
-            # Phase 6 requires chapter number and title
+
+            workflow_id = f"phase6-{project_id}-{uuid.uuid4()}"
+            await client.start_workflow(
+                Phase5ChapterOutlineWorkflow.run,
+                workflow_input,
+                id=workflow_id,
+                task_queue=settings.temporal_task_queue,
+                execution_timeout=timedelta(hours=1),
+                run_timeout=timedelta(hours=1),
+            )
+
+            return WorkflowStatus(
+                workflowId=workflow_id,
+                phase=phase,
+                status=PhaseStatus.IN_PROGRESS,
+                progress=0.0,
+                currentStep="Starting Phase 6: Chapter Outline Creation",
+                outputs={},
+            )
+
+        elif phase == 7:
+            from ..workflows.phase7_chapter_writing import (
+                Phase7SingleChapterWorkflow,
+                Phase7SceneBriefWorkflow,
+                Phase7FirstDraftWorkflow,
+                Phase7ImprovementPlanWorkflow,
+                Phase7ApplyImprovementPlanWorkflow,
+                Phase7FinalWorkflow,
+                Phase7Input,
+            )
+
             if not request.inputs.get("chapter_number") or not request.inputs.get("chapter_title"):
                 raise HTTPException(
                     status_code=400,
-                    detail="Phase 6 requires chapter_number and chapter_title in inputs"
+                    detail="Phase 7 requires chapter_number and chapter_title in inputs",
                 )
-            
-            workflow_input = Phase6Input(
+
+            workflow_input = Phase7Input(
                 project_id=project_id,
                 chapter_number=request.inputs.get("chapter_number"),
                 chapter_title=request.inputs.get("chapter_title"),
@@ -511,13 +544,13 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
             step_label = None
 
             if step in {"scene-brief", "scenebrief"}:
-                step_workflow = Phase6SceneBriefWorkflow.run
+                step_workflow = Phase7SceneBriefWorkflow.run
                 step_label = "scene-brief"
             elif step in {"draft", "first-draft", "firstdraft"}:
-                step_workflow = Phase6FirstDraftWorkflow.run
+                step_workflow = Phase7FirstDraftWorkflow.run
                 step_label = "draft"
             elif step in {"improve-plan", "improvement-plan", "improveplan", "improvementplan"}:
-                step_workflow = Phase6ImprovementPlanWorkflow.run
+                step_workflow = Phase7ImprovementPlanWorkflow.run
                 step_label = "improve-plan"
             elif step in {
                 "apply-improvement-plan",
@@ -525,25 +558,25 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
                 "applyimprovementplan",
                 "applyplan",
             }:
-                step_workflow = Phase6ApplyImprovementPlanWorkflow.run
+                step_workflow = Phase7ApplyImprovementPlanWorkflow.run
                 step_label = "apply-improvement-plan"
             elif step in {"final", "final-draft", "finaldraft"}:
-                step_workflow = Phase6FinalWorkflow.run
+                step_workflow = Phase7FinalWorkflow.run
                 step_label = "final"
 
             if step_workflow is None:
-                workflow_id = f"phase6-{project_id}-ch{workflow_input.chapter_number}-{uuid.uuid4()}"
+                workflow_id = f"phase7-{project_id}-ch{workflow_input.chapter_number}-{uuid.uuid4()}"
                 await client.start_workflow(
-                    Phase6SingleChapterWorkflow.run,
+                    Phase7SingleChapterWorkflow.run,
                     workflow_input,
                     id=workflow_id,
                     task_queue=settings.temporal_task_queue,
-                    execution_timeout=timedelta(hours=2),  # Longer for writing
+                    execution_timeout=timedelta(hours=2),
                     run_timeout=timedelta(hours=2),
                 )
             else:
                 workflow_id = (
-                    f"phase6-{project_id}-ch{workflow_input.chapter_number}-{step_label}-{uuid.uuid4()}"
+                    f"phase7-{project_id}-ch{workflow_input.chapter_number}-{step_label}-{uuid.uuid4()}"
                 )
                 await client.start_workflow(
                     step_workflow,
@@ -553,52 +586,50 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
                     execution_timeout=timedelta(hours=2),
                     run_timeout=timedelta(hours=2),
                 )
-            
+
             return WorkflowStatus(
                 workflowId=workflow_id,
                 phase=phase,
                 status=PhaseStatus.IN_PROGRESS,
                 progress=0.0,
-                currentStep=f"Starting Phase 6: Writing Chapter {workflow_input.chapter_number}",
+                currentStep=f"Starting Phase 7: Drafting Chapter {workflow_input.chapter_number}",
                 outputs={},
             )
-        
-        elif phase == 7:
-            from ..workflows.phase7_compilation import Phase7FinalCompilationWorkflow, Phase7Input
-            
-            # Get author name from project manifest
+
+        elif phase == 8:
+            from ..workflows.phase8_compilation import Phase8FinalCompilationWorkflow, Phase8Input
+
             manifest = storage_manager.get_project_manifest(project_id)
             author_name = manifest.get("metadata", {}).get("author", "Unknown Author")
-            
-            workflow_input = Phase7Input(
+
+            workflow_input = Phase8Input(
                 project_id=project_id,
                 author_name=author_name,
             )
-            
-            workflow_id = f"phase7-{project_id}-{uuid.uuid4()}"
-            
-            handle = await client.start_workflow(
-                Phase7FinalCompilationWorkflow.run,
+
+            workflow_id = f"phase8-{project_id}-{uuid.uuid4()}"
+            await client.start_workflow(
+                Phase8FinalCompilationWorkflow.run,
                 workflow_input,
                 id=workflow_id,
                 task_queue=settings.temporal_task_queue,
                 execution_timeout=timedelta(hours=1),
                 run_timeout=timedelta(hours=1),
             )
-            
+
             return WorkflowStatus(
                 workflowId=workflow_id,
                 phase=phase,
                 status=PhaseStatus.IN_PROGRESS,
                 progress=0.0,
-                currentStep="Starting Phase 7: Final Manuscript Compilation",
+                currentStep="Starting Phase 8: Final Manuscript Compilation",
                 outputs={},
             )
         
         else:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid phase number: {phase}. Valid phases are 1-7."
+                detail=f"Invalid phase number: {phase}. Valid phases are 1-8."
             )
             
     except FileNotFoundError:
@@ -713,15 +744,22 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                         "starting": 5,
                         "collecting_inputs": 10,
                         "waiting_for_inputs": 10,
+                        "loading_context_bundle": 20,
+                        "loading_sources": 15,
                         "researching": 30,
                         "generating_stylesheets": 50,
                         "generating_context_bundle": 70,
+                        "generating_story_bible": 70,
+                        "saving_story_bible": 85,
+                        "generating_outline": 70,
+                        "saving_outline": 85,
+                        "updating_context_bundle": 80,
+                        "saving_context_bundle": 85,
+                        "parsing_outline": 90,
                         "waiting_for_review": 90,
                         "revising": 80,
-                        "loading_sources": 15,
-                        "loading_context_bundle": 20,
+                        "processing_review": 90,
                         "curating_context_bundle": 70,
-                        "saving_context_bundle": 85,
                         "generating_tags": 70,
                         "validating_tags": 80,
                         "saving_tags": 90,
@@ -896,7 +934,7 @@ async def list_pending_inputs(project_id: str):
             return []
 
         safe_project_id = project_id.replace("'", "''")
-        prefixes = [f"phase{i}-{safe_project_id}-" for i in range(1, 8)]
+        prefixes = [f"phase{i}-{safe_project_id}-" for i in range(1, 9)]
         workflow_id_clauses = " OR ".join(
             [f"WorkflowId STARTS_WITH '{prefix}'" for prefix in prefixes]
         )
@@ -1043,7 +1081,8 @@ async def list_chapters(project_id: str):
             chapter_num = chapter_data.get("number")
             
             # Check which artifacts exist for this chapter
-            chapter_dir = f"phase6_outputs/chapter_{chapter_num}"
+            chapter_dir = f"phase7_outputs/chapter_{chapter_num}"
+            legacy_chapter_dir = f"phase6_outputs/chapter_{chapter_num}"
             has_scene_brief = False
             has_first_draft = False
             has_improvement_plan = False
@@ -1056,21 +1095,33 @@ async def list_chapters(project_id: str):
                 novel_vault.novel_read_text(project_id, f"{chapter_dir}/scene_brief.md")
                 has_scene_brief = True
             except:
-                pass
+                try:
+                    novel_vault.novel_read_text(project_id, f"{legacy_chapter_dir}/scene_brief.md")
+                    has_scene_brief = True
+                except:
+                    pass
             
             try:
                 # Check for first draft
                 novel_vault.novel_read_text(project_id, f"{chapter_dir}/first_draft.md")
                 has_first_draft = True
             except:
-                pass
+                try:
+                    novel_vault.novel_read_text(project_id, f"{legacy_chapter_dir}/first_draft.md")
+                    has_first_draft = True
+                except:
+                    pass
 
             try:
                 # Check for improvement plan
                 novel_vault.novel_read_text(project_id, f"{chapter_dir}/improvement_plan.md")
                 has_improvement_plan = True
             except:
-                pass
+                try:
+                    novel_vault.novel_read_text(project_id, f"{legacy_chapter_dir}/improvement_plan.md")
+                    has_improvement_plan = True
+                except:
+                    pass
             
             try:
                 # Check for final chapter
@@ -1080,7 +1131,13 @@ async def list_chapters(project_id: str):
                 word_count = len(final_result["text"].split())
                 last_updated = final_result.get("modified")
             except:
-                pass
+                try:
+                    final_result = novel_vault.novel_read_text(project_id, f"{legacy_chapter_dir}/final.md")
+                    has_final = True
+                    word_count = len(final_result["text"].split())
+                    last_updated = final_result.get("modified")
+                except:
+                    pass
             
             # Determine status
             if has_final:
@@ -1126,7 +1183,8 @@ async def get_chapter(project_id: str, chapter_number: int):
             raise HTTPException(status_code=404, detail=f"Chapter {chapter_number} not found")
         
         # Check which artifacts exist
-        chapter_dir = f"phase6_outputs/chapter_{chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{chapter_number}"
+        legacy_chapter_dir = f"phase6_outputs/chapter_{chapter_number}"
         has_scene_brief = False
         has_first_draft = False
         has_improvement_plan = False
@@ -1138,19 +1196,31 @@ async def get_chapter(project_id: str, chapter_number: int):
             novel_vault.novel_read_text(project_id, f"{chapter_dir}/scene_brief.md")
             has_scene_brief = True
         except:
-            pass
+            try:
+                novel_vault.novel_read_text(project_id, f"{legacy_chapter_dir}/scene_brief.md")
+                has_scene_brief = True
+            except:
+                pass
         
         try:
             novel_vault.novel_read_text(project_id, f"{chapter_dir}/first_draft.md")
             has_first_draft = True
         except:
-            pass
+            try:
+                novel_vault.novel_read_text(project_id, f"{legacy_chapter_dir}/first_draft.md")
+                has_first_draft = True
+            except:
+                pass
 
         try:
             novel_vault.novel_read_text(project_id, f"{chapter_dir}/improvement_plan.md")
             has_improvement_plan = True
         except:
-            pass
+            try:
+                novel_vault.novel_read_text(project_id, f"{legacy_chapter_dir}/improvement_plan.md")
+                has_improvement_plan = True
+            except:
+                pass
         
         try:
             final_result = novel_vault.novel_read_text(project_id, f"{chapter_dir}/final.md")
@@ -1158,7 +1228,13 @@ async def get_chapter(project_id: str, chapter_number: int):
             word_count = len(final_result["text"].split())
             last_updated = final_result.get("modified")
         except:
-            pass
+            try:
+                final_result = novel_vault.novel_read_text(project_id, f"{legacy_chapter_dir}/final.md")
+                has_final = True
+                word_count = len(final_result["text"].split())
+                last_updated = final_result.get("modified")
+            except:
+                pass
         
         # Determine status
         if has_final:
@@ -1236,7 +1312,7 @@ async def get_project_progress(project_id: str):
         phases_completed = inferred_completed
         phases = []
 
-        for phase_num in range(1, 8):
+        for phase_num in range(1, 9):
             if phase_num in phases_completed:
                 phases.append(PhaseProgress(
                     phase=phase_num,
@@ -1245,7 +1321,7 @@ async def get_project_progress(project_id: str):
                     started_at=None,  # TODO: Track this
                     completed_at=None,  # TODO: Track this
                 ))
-            elif phase_num == 6:
+            elif phase_num == 7:
                 total_chapters = state.get("total_chapters")
                 if not isinstance(total_chapters, int) or total_chapters <= 0:
                     total_chapters = len(chapters_data)
@@ -1287,7 +1363,7 @@ async def get_project_progress(project_id: str):
         phase_weight = 0.7  # 70% weight to phases
         chapter_weight = 0.3  # 30% weight to chapters
         
-        phase_progress = (len(phases_completed) / 7) * 100
+        phase_progress = (len(phases_completed) / 8) * 100
         chapter_progress = (chapters_completed / max(len(chapters_data), 1)) * 100
         
         overall_progress = (phase_progress * phase_weight) + (chapter_progress * chapter_weight)

@@ -294,6 +294,19 @@ async def load_artifact_activity(
 
 
 @activity.defn
+async def load_artifact_optional_activity(
+    project_id: str,
+    path: str,
+) -> str:
+    activity.logger.info(f"Loading artifact (optional): {path}")
+    try:
+        result = novel_vault.novel_read_text(project_id, path)
+        return result.get("text", "")
+    except FileNotFoundError:
+        return ""
+
+
+@activity.defn
 async def parse_outline_activity(
     project_id: str,
 ) -> int:

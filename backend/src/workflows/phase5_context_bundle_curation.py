@@ -97,7 +97,9 @@ class Phase5ContextBundleCurationWorkflow:
 
         style_sheet = await self._load_optional(project_id, "phase1_outputs/style_sheet.md")
         genre_tropes = await self._load_optional(project_id, "phase1_outputs/genre_tropes.md")
-        outline = await self._load_optional(project_id, "phase5_outputs/outline.md")
+        outline = await self._load_optional(project_id, "phase6_outputs/outline.md")
+        if not outline:
+            outline = await self._load_optional(project_id, "phase5_outputs/outline.md")
 
         context_bundle = await context_bundle_fut
         series_outline = ""
@@ -244,12 +246,22 @@ class Phase5ContextBundleTagsWorkflow:
         try:
             outline = await workflow.execute_activity(
                 load_artifact_activity,
-                args=[project_id, "phase5_outputs/outline.md"],
+                args=[project_id, "phase6_outputs/outline.md"],
                 start_to_close_timeout=workflow.timedelta(seconds=30),
                 retry_policy=RetryPolicy(maximum_attempts=1),
             )
         except Exception:
             outline = ""
+        if not outline:
+            try:
+                outline = await workflow.execute_activity(
+                    load_artifact_activity,
+                    args=[project_id, "phase5_outputs/outline.md"],
+                    start_to_close_timeout=workflow.timedelta(seconds=30),
+                    retry_policy=RetryPolicy(maximum_attempts=1),
+                )
+            except Exception:
+                outline = ""
 
         self._current_status = "generating_tags"
 

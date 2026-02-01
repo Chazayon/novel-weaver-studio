@@ -118,14 +118,22 @@ def novel_get_previous_chapter_final(project_id: str, chapter_number: int) -> Di
     
     # Look for final.md in previous chapter directory
     previous_chapter_path = (
-        project_path / "phase6_outputs" / f"chapter_{previous_chapter_num}" / "final.md"
+        project_path / "phase7_outputs" / f"chapter_{previous_chapter_num}" / "final.md"
     )
+    if not previous_chapter_path.exists():
+        previous_chapter_path = (
+            project_path / "phase6_outputs" / f"chapter_{previous_chapter_num}" / "final.md"
+        )
     
     if not previous_chapter_path.exists():
         # If final.md doesn't exist, try first_draft.md as fallback
         previous_chapter_path = (
-            project_path / "phase6_outputs" / f"chapter_{previous_chapter_num}" / "first_draft.md"
+            project_path / "phase7_outputs" / f"chapter_{previous_chapter_num}" / "first_draft.md"
         )
+        if not previous_chapter_path.exists():
+            previous_chapter_path = (
+                project_path / "phase6_outputs" / f"chapter_{previous_chapter_num}" / "first_draft.md"
+            )
     
     if not previous_chapter_path.exists():
         return {
@@ -211,7 +219,9 @@ def novel_parse_outline(project_id: str) -> Dict[str, Any]:
         Dict with 'chapters' list containing chapter information
     """
     project_path = _ensure_project_exists(project_id)
-    outline_path = project_path / "phase5_outputs" / "outline.md"
+    outline_path = project_path / "phase6_outputs" / "outline.md"
+    if not outline_path.exists():
+        outline_path = project_path / "phase5_outputs" / "outline.md"
     
     if not outline_path.exists():
         raise FileNotFoundError(f"Outline not found at {outline_path}")

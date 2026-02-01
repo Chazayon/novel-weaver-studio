@@ -9,7 +9,7 @@ import ChapterStudio from "./pages/ChapterStudio";
 import PhaseEditor from "./pages/PhaseEditor";
 import CompileExport from "./pages/CompileExport";
 import LLMSettings from "./pages/LLMSettings";
-import Phase6Wizard from "./pages/Phase6Wizard";
+import DraftingWizard from "./pages/DraftingWizard";
 import Phase5ContextBundleWizard from "./pages/Phase5ContextBundleWizard";
 import NotFound from "./pages/NotFound";
 
@@ -29,7 +29,8 @@ const App = () => (
           <Route path="/compile" element={<CompileExport />} />
           <Route path="/llm-settings" element={<LLMSettings />} />
           <Route path="/phase5-context" element={<Phase5ContextBundleWizard />} />
-          <Route path="/phase6-wizard" element={<Phase6Wizard />} />
+          <Route path="/phase6-wizard" element={<DraftingWizard />} />
+          <Route path="/drafting-wizard" element={<DraftingWizard />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -1,18 +1,28 @@
 import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, Home, Layers, FileText, Download, Sparkles, SlidersHorizontal, Wand2 } from 'lucide-react';
+import { BookOpen, Home, Layers, FileText, Download, Sparkles, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
 
 interface AppLayoutProps {
   children: ReactNode;
 }
 
-const navItems = [
+const primaryNavItems = [
   { path: '/', icon: Home, label: 'Projects' },
   { path: '/cockpit', icon: Layers, label: 'Workflow' },
   { path: '/chapter-studio', icon: FileText, label: 'Chapter Studio' },
+];
+
+const toolsMenuItems = [
   { path: '/phase5-context', icon: Sparkles, label: 'Context Bundle' },
-  { path: '/phase6-wizard', icon: Wand2, label: 'Phase 6 Wizard' },
+  { path: '/drafting-wizard', icon: FileText, label: 'Drafting Wizard' },
   { path: '/compile', icon: Download, label: 'Compile' },
   { path: '/llm-settings', icon: SlidersHorizontal, label: 'LLM Settings' },
 ];
@@ -42,7 +52,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
           {/* Navigation */}
           <nav className="flex items-center gap-1">
-            {navItems.map((item) => {
+            {primaryNavItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
                 <Link
@@ -60,6 +70,41 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </Link>
               );
             })}
+            
+            {/* Tools dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                    toolsMenuItems.some(item => location.pathname === item.path)
+                      ? "bg-primary/20 text-primary"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  )}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span className="hidden sm:inline">Tools</span>
+                  <ChevronDown className="w-3 h-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                {toolsMenuItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <DropdownMenuItem key={item.path} asChild>
+                      <Link
+                        to={item.path}
+                        className="flex items-center gap-2 cursor-pointer"
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </nav>
 
           {/* AI Status indicator */}

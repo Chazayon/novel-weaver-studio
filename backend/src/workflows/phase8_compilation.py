@@ -18,21 +18,21 @@ with workflow.unsafe.imports_passed_through():
 
 
 @dataclass
-class Phase7Input:
+class Phase8Input:
     """Input for Phase 7 workflow."""
     project_id: str
     author_name: str | None = None
 
 
 @dataclass
-class Phase7Output:
+class Phase8Output:
     """Output from Phase 7 workflow."""
     final_manuscript: str
     status: str
 
 
 @workflow.defn
-class Phase7FinalCompilationWorkflow:
+class Phase8FinalCompilationWorkflow:
     """
     Phase 7: Final Manuscript Compilation
     
@@ -43,7 +43,7 @@ class Phase7FinalCompilationWorkflow:
     """
     
     @workflow.run
-    async def run(self, input: Phase7Input) -> Phase7Output:
+    async def run(self, input: Phase8Input) -> Phase8Output:
         """Execute Phase 7 workflow."""
         
         workflow.logger.info(f"Starting Phase 7 for project {input.project_id}")
@@ -95,7 +95,7 @@ Output ONLY the final manuscript Markdown.""",
                 0.2,
                 16000,
                 input.project_id,
-                "phase7-compile",
+                "phase8-compile",
             ],
             start_to_close_timeout=workflow.timedelta(minutes=10),
             retry_policy=RetryPolicy(maximum_attempts=3),
@@ -112,7 +112,7 @@ Output ONLY the final manuscript Markdown.""",
         
         workflow.logger.info("Phase 7 complete! Novel compilation finished!")
         
-        return Phase7Output(
+        return Phase8Output(
             final_manuscript=final_manuscript,
             status="completed",
         )

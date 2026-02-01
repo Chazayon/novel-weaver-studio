@@ -5,6 +5,7 @@ Converts: Novel_Writing/Phase05_Chapter_Outline_Creation.yaml
 """
 
 from dataclasses import dataclass
+from typing import Dict
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
@@ -13,6 +14,7 @@ with workflow.unsafe.imports_passed_through():
     from .activities import (
         llm_generate_activity,
         load_artifact_activity,
+        load_artifact_optional_activity,
         save_artifact_activity,
         human_input_activity,
         parse_outline_activity,
@@ -51,15 +53,45 @@ class Phase5ChapterOutlineWorkflow:
     7. Save updated context bundle
     8. Parse outline to extract chapters
     """
+
+    def __init__(self) -> None:
+        self._current_status: str = "starting"
+        self._pending_content: str | None = None
+        self._pending_description: str | None = None
+        self._pending_expected_outputs: list[str] | None = None
+        self._human_input: Dict[str, str] | None = None
+
+    @workflow.query
+    def get_current_status(self) -> str:
+        return self._current_status
+
+    @workflow.query
+    def get_pending_content(self) -> str | None:
+        return self._pending_content
+
+    @workflow.query
+    def get_pending_description(self) -> str | None:
+        return self._pending_description
+
+    @workflow.query
+    def get_pending_expected_outputs(self) -> list[str] | None:
+        return self._pending_expected_outputs
+
+    @workflow.signal
+    async def human_input_received(self, inputs: Dict[str, str]) -> None:
+        self._human_input = inputs
+        self._current_status = "processing_review"
     
     @workflow.run
     async def run(self, input: Phase5Input) -> Phase5Output:
         """Execute Phase 5 workflow."""
         
+        self._current_status = "starting"
         workflow.logger.info(f"Starting Phase 5 for project {input.project_id}")
         
         # Step 1: Load context bundle
         workflow.logger.info("Loading context bundle")
+        self._current_status = "loading_context_bundle"
         
         context_bundle = await workflow.execute_activity(
             load_artifact_activity,
@@ -69,20 +101,18 @@ class Phase5ChapterOutlineWorkflow:
         )
 
         context_bundle_tags_json = ""
-        try:
-            context_bundle_tags_json = await workflow.execute_activity(
-                load_artifact_activity,
-                args=[input.project_id, "phase1_outputs/context_bundle_tags.json"],
-                start_to_close_timeout=workflow.timedelta(seconds=30),
-                retry_policy=RetryPolicy(maximum_attempts=1),
-            )
-        except Exception:
-            context_bundle_tags_json = ""
+        context_bundle_tags_json = await workflow.execute_activity(
+            load_artifact_optional_activity,
+            args=[input.project_id, "phase1_outputs/context_bundle_tags.json"],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
         
         outline_template = input.outline_template or "USE_BUNDLE"
         
         # Step 2: Generate chapter outline (with revision loop)
         workflow.logger.info("Generating chapter outline")
+        self._current_status = "generating_outline"
         
         outline = await self._generate_chapter_outline(
             context_bundle=context_bundle,
@@ -91,18 +121,26 @@ class Phase5ChapterOutlineWorkflow:
             auto_approve=input.auto_approve,
             project_id=input.project_id,
         )
+
+        if not outline or not outline.strip():
+            raise ValueError("Generated outline was empty")
+
+        if "### Chapter" not in outline:
+            raise ValueError("Generated outline did not include any '### Chapter N:' headings")
         
         # Step 3: Save outline
         workflow.logger.info("Saving chapter outline")
+        self._current_status = "saving_outline"
         
         await workflow.execute_activity(
             save_artifact_activity,
-            args=[input.project_id, "phase5_outputs/outline.md", outline],
+            args=[input.project_id, "phase6_outputs/outline.md", outline],
             start_to_close_timeout=workflow.timedelta(seconds=30),
         )
         
         # Step 4: Update context bundle with outline
         workflow.logger.info("Updating context bundle")
+        self._current_status = "updating_context_bundle"
         
         updated_context_bundle = await workflow.execute_activity(
             llm_generate_activity,
@@ -136,6 +174,7 @@ Return the full updated Context Bundle in Markdown.
         
         # Step 5: Save updated context bundle
         workflow.logger.info("Saving updated context bundle")
+        self._current_status = "saving_context_bundle"
         
         await workflow.execute_activity(
             save_artifact_activity,
@@ -145,6 +184,7 @@ Return the full updated Context Bundle in Markdown.
         
         # Step 6: Parse outline to extract chapters
         workflow.logger.info("Parsing outline to extract chapters")
+        self._current_status = "parsing_outline"
         
         chapters_parsed = await workflow.execute_activity(
             parse_outline_activity,
@@ -154,6 +194,7 @@ Return the full updated Context Bundle in Markdown.
         )
         
         workflow.logger.info(f"Phase 5 complete! Parsed {chapters_parsed} chapters")
+        self._current_status = "completed"
         
         return Phase5Output(
             outline=outline,
@@ -218,7 +259,7 @@ Output as Markdown:
                 0.6,
                 9000,
                 project_id,
-                "phase5-outline",
+                "phase6-outline",
             ],
             start_to_close_timeout=workflow.timedelta(minutes=5),
             retry_policy=RetryPolicy(maximum_attempts=3),
@@ -233,12 +274,9 @@ Output as Markdown:
         max_revisions = 5
         for revision_count in range(max_revisions):
             workflow.logger.info(f"Requesting human review (attempt {revision_count + 1})")
-            
-            # Request approval or revision
-            decision = await workflow.execute_activity(
-                human_input_activity,
-                args=[
-                    f"""## Chapter Outline Review
+
+            self._current_status = "waiting_for_review"
+            self._pending_content = f"""## Chapter Outline Review
 
 {outline}
 
@@ -246,15 +284,29 @@ Output as Markdown:
 
 **Review the outline above.**
 
-Type **APPROVE** to lock it in, or type **REVISE** to request changes.""",
-                    ["decision"],
-                ],
-                start_to_close_timeout=workflow.timedelta(hours=24),
+Type **APPROVE** to lock it in, or type **REVISE** to request changes."""
+            self._pending_description = "Review the generated chapter outline"
+            self._pending_expected_outputs = ["decision"]
+            self._human_input = None
+
+            await workflow.execute_activity(
+                human_input_activity,
+                args=[self._pending_content, ["decision"]],
+                start_to_close_timeout=workflow.timedelta(minutes=2),
                 retry_policy=RetryPolicy(maximum_attempts=1),
             )
-            
-            # Check decision (case-insensitive)
-            decision_text = decision.get("decision", "").strip().upper()
+
+            await workflow.wait_condition(
+                lambda: self._human_input is not None,
+                timeout=workflow.timedelta(hours=24),
+            )
+
+            decision_text = (self._human_input or {}).get("decision", "").strip().upper()
+
+            self._pending_content = None
+            self._pending_description = None
+            self._pending_expected_outputs = None
+            self._current_status = "processing_review"
             
             if "APPROVE" in decision_text:
                 workflow.logger.info("Chapter outline approved")
@@ -262,21 +314,33 @@ Type **APPROVE** to lock it in, or type **REVISE** to request changes.""",
             
             if "REVISE" in decision_text:
                 workflow.logger.info("Revision requested")
-                
-                # Collect revision notes
-                revision_input = await workflow.execute_activity(
-                    human_input_activity,
-                    args=[
-                        """## Revision Notes
 
-Paste which chapters need changes and what you want different (bullets are best). The agent will revise the outline based on your notes.""",
-                        ["revision_notes"],
-                    ],
-                    start_to_close_timeout=workflow.timedelta(hours=24),
+                self._current_status = "waiting_for_review"
+                self._pending_content = """## Revision Notes
+
+Paste which chapters need changes and what you want different (bullets are best). The agent will revise the outline based on your notes."""
+                self._pending_description = "Provide revision notes"
+                self._pending_expected_outputs = ["revision_notes"]
+                self._human_input = None
+
+                await workflow.execute_activity(
+                    human_input_activity,
+                    args=[self._pending_content, ["revision_notes"]],
+                    start_to_close_timeout=workflow.timedelta(minutes=2),
                     retry_policy=RetryPolicy(maximum_attempts=1),
                 )
-                
-                revision_notes = revision_input.get("revision_notes", "")
+
+                await workflow.wait_condition(
+                    lambda: self._human_input is not None,
+                    timeout=workflow.timedelta(hours=24),
+                )
+
+                revision_notes = (self._human_input or {}).get("revision_notes", "")
+
+                self._pending_content = None
+                self._pending_description = None
+                self._pending_expected_outputs = None
+                self._current_status = "revising"
                 
                 # Revise the outline
                 workflow.logger.info("Revising chapter outline")
@@ -314,7 +378,7 @@ Output ONLY the revised Markdown outline.""",
                         0.5,
                         9000,
                         project_id,
-                        "phase5-outline-revise",
+                        "phase6-outline-revise",
                     ],
                     start_to_close_timeout=workflow.timedelta(minutes=5),
                     retry_policy=RetryPolicy(maximum_attempts=3),

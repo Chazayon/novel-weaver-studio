@@ -51,7 +51,7 @@ import { WorkflowReviewDialog } from '@/components/workflow/WorkflowReviewDialog
 import { ArtifactViewDialog } from '@/components/workflow/ArtifactViewDialog';
 import { PhaseConfirmDialog } from '@/components/workflow/PhaseConfirmDialog';
 import { Phase1InputDialog } from '@/components/workflow/Phase1InputDialog';
-import { Phase6InputDialog } from '@/components/workflow/Phase6InputDialog';
+import { DraftingInputDialog } from '@/components/workflow/DraftingInputDialog';
 import { PhaseCompletionDialog } from '@/components/workflow/PhaseCompletionDialog';
 import { PhaseOutputsDialog } from '@/components/workflow/PhaseOutputsDialog';
 import { WorkflowPhasesPanel } from '@/components/workflow/WorkflowPhasesPanel';
@@ -85,8 +85,8 @@ export default function WorkflowCockpit() {
   const [isContextOpen, toggleContextOpen] = usePanelState('cockpit-context', true, projectId);
   const [isOutputModalOpen, setIsOutputModalOpen] = useState(false);
   const [isPhase1InputOpen, setIsPhase1InputOpen] = useState(false);
-  const [isPhase6InputOpen, setIsPhase6InputOpen] = useState(false);
-  const [phase6FormData, setPhase6FormData] = useState({
+  const [isDraftingInputOpen, setIsDraftingInputOpen] = useState(false);
+  const [draftingFormData, setDraftingFormData] = useState({
     chapter_number: '1',
     chapter_title: ''
   });
@@ -122,17 +122,17 @@ export default function WorkflowCockpit() {
     [chaptersData]
   );
 
-  // Autofill Phase 6 dialog with the next incomplete chapter from outline
+  // Autofill drafting dialog with the next incomplete chapter from outline
   useEffect(() => {
-    if (!isPhase6InputOpen || !chaptersList || chaptersList.length === 0) return;
+    if (!isDraftingInputOpen || !chaptersList || chaptersList.length === 0) return;
     // If no title selected yet, pick first not completed chapter
-    if (!phase6FormData.chapter_title) {
+    if (!draftingFormData.chapter_title) {
       const next: ChapterDetail | undefined = chaptersList.find((c) => c.status !== 'completed') || chaptersList[0];
       if (next) {
-        setPhase6FormData({ chapter_number: String(next.number), chapter_title: next.title });
+        setDraftingFormData({ chapter_number: String(next.number), chapter_title: next.title });
       }
     }
-  }, [isPhase6InputOpen, chaptersList, phase6FormData.chapter_title]);
+  }, [isDraftingInputOpen, chaptersList, draftingFormData.chapter_title]);
   const [viewingArtifact, setViewingArtifact] = useState<Artifact | null>(null);
   const [isArtifactViewOpen, setIsArtifactViewOpen] = useState(false);
 
@@ -231,23 +231,33 @@ export default function WorkflowCockpit() {
   }, [pendingInputs]);
 
   // Convert backend progress data to Phase format
-  const phases: Phase[] = progressData?.phases.map(p => {
-    const phaseInfo = getPhaseInfo(p.phase);
-    const isPhaseRunning = runningPhases.has(p.phase);
-    return {
-      id: p.phase,
-      name: phaseInfo.name,
-      description: phaseInfo.description,
-      status: p.status === 'completed'
-        ? ('completed' as const)
-        : isPhaseRunning
-          ? ('in-progress' as const)
-          : ('not-started' as const),
-      duration: phaseInfo.duration,
-      outputs: phaseInfo.outputs,
-      requiredInputs: phaseInfo.requiredInputs,
-    };
-  }) || [];
+  const phases: Phase[] = useMemo(() => {
+    const backendPhases = progressData?.phases || [];
+    const backendById = new Map(backendPhases.map((p) => [p.phase, p] as const));
+
+    const maxPhase = 8;
+    return Array.from({ length: maxPhase }, (_, idx) => {
+      const phaseId = idx + 1;
+      const p = backendById.get(phaseId);
+      const phaseInfo = getPhaseInfo(phaseId);
+      const isPhaseRunning = runningPhases.has(phaseId);
+
+      return {
+        id: phaseId,
+        name: phaseInfo.name,
+        description: phaseInfo.description,
+        status:
+          p?.status === 'completed'
+            ? ('completed' as const)
+            : isPhaseRunning
+              ? ('in-progress' as const)
+              : ('not-started' as const),
+        duration: phaseInfo.duration,
+        outputs: phaseInfo.outputs,
+        requiredInputs: phaseInfo.requiredInputs,
+      };
+    });
+  }, [progressData?.phases, runningPhases]);
 
   // Convert artifacts data and merge with saved outputs
   const artifacts: Artifact[] = [
@@ -458,20 +468,27 @@ export default function WorkflowCockpit() {
         requiredInputs: ['Call sheet', 'Genre tropes'],
       },
       5: {
+        name: 'Story Bible Compilation',
+        description: 'Compile a cohesive story bible for consistent drafting across the book/series.',
+        duration: '10-20 minutes',
+        outputs: ['story_bible.md'],
+        requiredInputs: ['Series outline', 'Characters', 'Worldbuilding'],
+      },
+      6: {
         name: 'Chapter Outline Creation',
         description: 'Create detailed chapter-by-chapter outline for your novel.',
         duration: '10-15 minutes',
         outputs: ['outline.md'],
-        requiredInputs: ['Series outline', 'Characters', 'Worldbuilding'],
+        requiredInputs: ['Story bible', 'Characters', 'Worldbuilding'],
       },
-      6: {
-        name: 'Chapter Writing',
+      7: {
+        name: 'Chapter Drafting',
         description: 'Write each chapter through the scene brief → draft → improve → final pipeline.',
         duration: '15-25 min/chapter',
         outputs: ['chapter_X_final.md'],
         requiredInputs: ['Outline', 'Characters', 'Style sheet'],
       },
-      7: {
+      8: {
         name: 'Final Compilation',
         description: 'Compile all chapters into the final manuscript.',
         duration: '5 minutes',
@@ -517,6 +534,8 @@ export default function WorkflowCockpit() {
     // For other phases, prefer known content fields
     const obj = storedOutput as Record<string, unknown>;
     const preferredFields = [
+      'story_bible',
+      'story_bible_md',
       'outline',
       'chapter_outline',
       'series_outline',
@@ -554,9 +573,9 @@ export default function WorkflowCockpit() {
     // For Phase 1, show input dialog directly
     if (currentPhase === 1) {
       setIsPhase1InputOpen(true);
-    } else if (currentPhase === 6) {
-      // For Phase 6, show chapter input dialog
-      setIsPhase6InputOpen(true);
+    } else if (currentPhase === 7) {
+      // For Drafting (Phase 7), show chapter input dialog
+      setIsDraftingInputOpen(true);
     } else {
       // For other phases, show confirmation
       setPhaseToRun(currentPhase);
@@ -590,10 +609,10 @@ export default function WorkflowCockpit() {
         inputs.outline_template = phase1FormData.outline_template;
         inputs.prohibited_words = phase1FormData.prohibited_words;
       }
-      // For Phase 6, use chapter inputs
-      else if (phaseNum === 6) {
-        inputs.chapter_number = parseInt(phase6FormData.chapter_number, 10);
-        inputs.chapter_title = phase6FormData.chapter_title;
+      // For Phase 7, use chapter inputs
+      else if (phaseNum === 7) {
+        inputs.chapter_number = parseInt(draftingFormData.chapter_number, 10);
+        inputs.chapter_title = draftingFormData.chapter_title;
       }
       // For Phase 2+, check if previous phase has outputs
       else if (phaseNum > 1) {
@@ -776,7 +795,7 @@ export default function WorkflowCockpit() {
     setIsConfirmRunOpen(true);
   };
 
-  const handlePhase6InputSubmit = async () => {
+  const handleDraftingInputSubmit = async () => {
     if (!projectId) {
       toast({
         title: 'Error',
@@ -787,7 +806,7 @@ export default function WorkflowCockpit() {
     }
 
     // Validate required fields
-    if (!phase6FormData.chapter_title) {
+    if (!draftingFormData.chapter_title) {
       toast({
         title: 'Error',
         description: 'Please provide a chapter title',
@@ -797,20 +816,20 @@ export default function WorkflowCockpit() {
     }
 
     // Close input dialog and show confirmation
-    setIsPhase6InputOpen(false);
-    setPhaseToRun(6);
+    setIsDraftingInputOpen(false);
+    setPhaseToRun(7);
     setIsConfirmRunOpen(true);
   };
 
   const handleEditInEditor = () => {
-    if (activePhase.id === 6) {
+    if (activePhase.id === 7) {
       // Ensure Chapter Studio knows which project to load
       if (projectId) {
         navigate(`/chapter-studio?projectId=${projectId}`);
       } else {
         navigate('/chapter-studio');
       }
-    } else if (activePhase.id === 7) {
+    } else if (activePhase.id === 8) {
       navigate('/compile');
     } else {
       if (projectId) {
@@ -921,7 +940,7 @@ export default function WorkflowCockpit() {
             canEditOutputs={Boolean(phaseOutputs[activePhase.id]) || activePhase.status !== 'not-started'}
             canRerun={activePhase.status === 'completed' && !isRunning}
             cancelPending={cancelWorkflow.isPending}
-            showOpenChapterStudio={activePhase.id === 6}
+            showOpenChapterStudio={activePhase.id === 7}
             onOpenChapterStudio={() => {
               if (projectId) {
                 navigate(`/chapter-studio?projectId=${projectId}`);
@@ -997,16 +1016,16 @@ export default function WorkflowCockpit() {
         onSubmit={handlePhase1InputSubmit}
       />
 
-      {/* Phase 6 Input Dialog */}
-      <Phase6InputDialog
-        open={isPhase6InputOpen}
-        onOpenChange={setIsPhase6InputOpen}
-        formData={phase6FormData}
-        onFormDataChange={setPhase6FormData}
+      {/* Drafting Input Dialog */}
+      <DraftingInputDialog
+        open={isDraftingInputOpen}
+        onOpenChange={setIsDraftingInputOpen}
+        formData={draftingFormData}
+        onFormDataChange={setDraftingFormData}
         chapters={chaptersList}
         showChapterSelector={Boolean(chaptersData && chaptersData.length > 0)}
-        onCancel={() => setIsPhase6InputOpen(false)}
-        onSubmit={handlePhase6InputSubmit}
+        onCancel={() => setIsDraftingInputOpen(false)}
+        onSubmit={handleDraftingInputSubmit}
       />
 
       {/* Review Dialog */}
@@ -1048,9 +1067,10 @@ export default function WorkflowCockpit() {
         onClose={() => setIsCompletionDialogOpen(false)}
         onContinue={() => {
           setIsCompletionDialogOpen(false);
-          const nextPhase = currentPhase + 1;
+          const basePhase = completionPhase ?? currentPhase;
+          const nextPhase = basePhase + 1;
           setCurrentPhase(nextPhase);
-          if (currentPhase === 1) {
+          if (basePhase === 1) {
             toast({
               title: 'Moving to Phase 2',
               description: 'Ready to start brainstorming your series outline.',

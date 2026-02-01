@@ -15,6 +15,7 @@ with workflow.unsafe.imports_passed_through():
     from .activities import (
         llm_generate_activity,
         load_artifact_activity,
+        load_artifact_optional_activity,
         save_artifact_activity,
         human_input_activity,
         get_previous_chapter_activity,
@@ -174,7 +175,7 @@ def _build_relevant_context_markdown(
 
 
 @dataclass
-class Phase6Input:
+class Phase7Input:
     """Input for Phase 6 workflow."""
     project_id: str
     chapter_number: int
@@ -185,7 +186,7 @@ class Phase6Input:
 
 
 @dataclass
-class Phase6Output:
+class Phase7Output:
     """Output from Phase 6 workflow."""
     scene_brief: str
     first_draft: str
@@ -196,7 +197,7 @@ class Phase6Output:
 
 
 @workflow.defn
-class Phase6SingleChapterWorkflow:
+class Phase7SingleChapterWorkflow:
     """
     Phase 6: Single Chapter Writing
     
@@ -288,7 +289,7 @@ class Phase6SingleChapterWorkflow:
         return received
     
     @workflow.run
-    async def run(self, input: Phase6Input) -> Phase6Output:
+    async def run(self, input: Phase7Input) -> Phase7Output:
         """Execute Phase 6 workflow."""
         
         workflow.logger.info(f"Starting Phase 6: Chapter {input.chapter_number} - {input.chapter_title}")
@@ -353,14 +354,14 @@ Output as Markdown only.""",
                 0.6,
                 5000,
                 input.project_id,
-                "phase6-scene-brief",
+                "phase7-scene-brief",
             ],
             start_to_close_timeout=workflow.timedelta(minutes=5),
             retry_policy=RetryPolicy(maximum_attempts=3),
         )
         
         # Save scene brief
-        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{input.chapter_number}"
         save_scene_brief_fut = workflow.start_activity(
             save_artifact_activity,
             args=[input.project_id, f"{chapter_dir}/scene_brief.md", scene_brief],
@@ -399,7 +400,7 @@ Output only the full chapter in Markdown with a heading:
                 0.75,
                 12000,
                 input.project_id,
-                "phase6-first-draft",
+                "phase7-first-draft",
             ],
             start_to_close_timeout=workflow.timedelta(minutes=10),
             retry_policy=RetryPolicy(maximum_attempts=3),
@@ -450,7 +451,7 @@ Output as Markdown:
                 0.3,
                 5000,
                 input.project_id,
-                "phase6-improvement-plan",
+                "phase7-improvement-plan",
             ],
             start_to_close_timeout=workflow.timedelta(minutes=5),
             retry_policy=RetryPolicy(maximum_attempts=3),
@@ -536,7 +537,7 @@ Output as Markdown:
         
         workflow.logger.info(f"Phase 6 complete! Chapter {input.chapter_number} finished")
         
-        return Phase6Output(
+        return Phase7Output(
             scene_brief=scene_brief,
             first_draft=first_draft,
             improvement_plan=improvement_plan,
@@ -634,7 +635,7 @@ Output only the revised chapter in Markdown with the same heading.""",
                     0.6,
                     12000,
                     project_id,
-                    "phase6-apply-improvement-plan",
+                    "phase7-apply-improvement-plan",
                 ],
                 start_to_close_timeout=workflow.timedelta(minutes=10),
                 retry_policy=RetryPolicy(maximum_attempts=3),
@@ -710,7 +711,7 @@ Output only the revised chapter in Markdown with the same heading.""",
                     0.65,
                     12000,
                     project_id,
-                    "phase6-apply-improvement-plan",
+                    "phase7-apply-improvement-plan",
                 ],
                 start_to_close_timeout=workflow.timedelta(minutes=10),
                 retry_policy=RetryPolicy(maximum_attempts=3),
@@ -744,7 +745,7 @@ Output only the revised chapter in Markdown with the same heading.""",
                 0.6,
                 12000,
                 project_id,
-                "phase6-apply-improvement-plan",
+                "phase7-apply-improvement-plan",
             ],
             start_to_close_timeout=workflow.timedelta(minutes=10),
             retry_policy=RetryPolicy(maximum_attempts=3),
@@ -835,7 +836,7 @@ Output only the revised chapter in Markdown with the same heading.""",
                         0.55,
                         12000,
                         project_id,
-                        "phase6-final-revise",
+                        "phase7-final-revise",
                     ],
                     start_to_close_timeout=workflow.timedelta(minutes=10),
                     retry_policy=RetryPolicy(maximum_attempts=3),
@@ -852,13 +853,13 @@ Output only the revised chapter in Markdown with the same heading.""",
 
 
 @dataclass
-class Phase6StepOutput:
+class Phase7StepOutput:
     artifact: str
     status: str
 
 
 @workflow.defn
-class Phase6SceneBriefWorkflow:
+class Phase7SceneBriefWorkflow:
     def __init__(self) -> None:
         self._current_status: str = "starting"
 
@@ -867,7 +868,7 @@ class Phase6SceneBriefWorkflow:
         return self._current_status
 
     @workflow.run
-    async def run(self, input: Phase6Input) -> Phase6StepOutput:
+    async def run(self, input: Phase7Input) -> Phase7StepOutput:
         self._current_status = "loading_context"
 
         context_bundle_fut = workflow.start_activity(
@@ -888,7 +889,7 @@ class Phase6SceneBriefWorkflow:
         previous_chapter_text = await previous_chapter_text_fut
         chapter_notes = input.chapter_notes or ""
 
-        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{input.chapter_number}"
         relevant_context = ""
         try:
             relevant_context = await workflow.execute_activity(
@@ -899,15 +900,12 @@ class Phase6SceneBriefWorkflow:
             )
         except Exception:
             tags_json = ""
-            try:
-                tags_json = await workflow.execute_activity(
-                    load_artifact_activity,
-                    args=[input.project_id, "phase1_outputs/context_bundle_tags.json"],
-                    start_to_close_timeout=workflow.timedelta(seconds=30),
-                    retry_policy=RetryPolicy(maximum_attempts=1),
-                )
-            except Exception:
-                tags_json = ""
+            tags_json = await workflow.execute_activity(
+                load_artifact_optional_activity,
+                args=[input.project_id, "phase1_outputs/context_bundle_tags.json"],
+                start_to_close_timeout=workflow.timedelta(seconds=30),
+                retry_policy=RetryPolicy(maximum_attempts=1),
+            )
 
             if isinstance(tags_json, str) and tags_json.strip():
                 relevant_context = _build_relevant_context_markdown(
@@ -941,7 +939,7 @@ class Phase6SceneBriefWorkflow:
 
         self._current_status = "saving_scene_brief"
 
-        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{input.chapter_number}"
         await workflow.execute_activity(
             save_artifact_activity,
             args=[input.project_id, f"{chapter_dir}/scene_brief.md", scene_brief],
@@ -950,11 +948,11 @@ class Phase6SceneBriefWorkflow:
         )
 
         self._current_status = "completed"
-        return Phase6StepOutput(artifact=scene_brief, status="completed")
+        return Phase7StepOutput(artifact=scene_brief, status="completed")
 
 
 @workflow.defn
-class Phase6FirstDraftWorkflow:
+class Phase7FirstDraftWorkflow:
     def __init__(self) -> None:
         self._current_status: str = "starting"
 
@@ -963,7 +961,7 @@ class Phase6FirstDraftWorkflow:
         return self._current_status
 
     @workflow.run
-    async def run(self, input: Phase6Input) -> Phase6StepOutput:
+    async def run(self, input: Phase7Input) -> Phase7StepOutput:
         self._current_status = "loading_context"
 
         context_bundle_fut = workflow.start_activity(
@@ -973,7 +971,7 @@ class Phase6FirstDraftWorkflow:
             retry_policy=RetryPolicy(maximum_attempts=2),
         )
 
-        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{input.chapter_number}"
         scene_brief_fut = workflow.start_activity(
             load_artifact_activity,
             args=[input.project_id, f"{chapter_dir}/scene_brief.md"],
@@ -984,7 +982,7 @@ class Phase6FirstDraftWorkflow:
         context_bundle = await context_bundle_fut
         scene_brief = await scene_brief_fut
 
-        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{input.chapter_number}"
         relevant_context = ""
         try:
             relevant_context = await workflow.execute_activity(
@@ -1024,11 +1022,11 @@ class Phase6FirstDraftWorkflow:
         )
 
         self._current_status = "completed"
-        return Phase6StepOutput(artifact=first_draft, status="completed")
+        return Phase7StepOutput(artifact=first_draft, status="completed")
 
 
 @workflow.defn
-class Phase6ImprovementPlanWorkflow:
+class Phase7ImprovementPlanWorkflow:
     def __init__(self) -> None:
         self._current_status: str = "starting"
 
@@ -1037,7 +1035,7 @@ class Phase6ImprovementPlanWorkflow:
         return self._current_status
 
     @workflow.run
-    async def run(self, input: Phase6Input) -> Phase6StepOutput:
+    async def run(self, input: Phase7Input) -> Phase7StepOutput:
         self._current_status = "loading_context"
 
         context_bundle_fut = workflow.start_activity(
@@ -1047,7 +1045,7 @@ class Phase6ImprovementPlanWorkflow:
             retry_policy=RetryPolicy(maximum_attempts=2),
         )
 
-        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{input.chapter_number}"
         scene_brief_fut = workflow.start_activity(
             load_artifact_activity,
             args=[input.project_id, f"{chapter_dir}/scene_brief.md"],
@@ -1065,7 +1063,7 @@ class Phase6ImprovementPlanWorkflow:
         scene_brief = await scene_brief_fut
         first_draft = await first_draft_fut
 
-        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{input.chapter_number}"
         relevant_context = ""
         try:
             relevant_context = await workflow.execute_activity(
@@ -1105,11 +1103,11 @@ class Phase6ImprovementPlanWorkflow:
         )
 
         self._current_status = "completed"
-        return Phase6StepOutput(artifact=improvement_plan, status="completed")
+        return Phase7StepOutput(artifact=improvement_plan, status="completed")
 
 
 @workflow.defn
-class Phase6ApplyImprovementPlanWorkflow:
+class Phase7ApplyImprovementPlanWorkflow:
     def __init__(self) -> None:
         self._current_status: str = "starting"
 
@@ -1118,7 +1116,7 @@ class Phase6ApplyImprovementPlanWorkflow:
         return self._current_status
 
     @workflow.run
-    async def run(self, input: Phase6Input) -> Phase6StepOutput:
+    async def run(self, input: Phase7Input) -> Phase7StepOutput:
         self._current_status = "loading_context"
 
         context_bundle_fut = workflow.start_activity(
@@ -1128,7 +1126,7 @@ class Phase6ApplyImprovementPlanWorkflow:
             retry_policy=RetryPolicy(maximum_attempts=2),
         )
 
-        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{input.chapter_number}"
         first_draft_fut = workflow.start_activity(
             load_artifact_activity,
             args=[input.project_id, f"{chapter_dir}/first_draft.md"],
@@ -1146,7 +1144,7 @@ class Phase6ApplyImprovementPlanWorkflow:
         first_draft = await first_draft_fut
         improvement_plan = await improvement_plan_fut
 
-        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{input.chapter_number}"
         relevant_context = ""
         try:
             relevant_context = await workflow.execute_activity(
@@ -1186,11 +1184,11 @@ class Phase6ApplyImprovementPlanWorkflow:
         )
 
         self._current_status = "completed"
-        return Phase6StepOutput(artifact=revised_draft, status="completed")
+        return Phase7StepOutput(artifact=revised_draft, status="completed")
 
 
 @workflow.defn
-class Phase6FinalWorkflow:
+class Phase7FinalWorkflow:
     def __init__(self) -> None:
         self._current_status: str = "starting"
 
@@ -1199,7 +1197,7 @@ class Phase6FinalWorkflow:
         return self._current_status
 
     @workflow.run
-    async def run(self, input: Phase6Input) -> Phase6StepOutput:
+    async def run(self, input: Phase7Input) -> Phase7StepOutput:
         self._current_status = "loading_context"
 
         context_bundle_fut = workflow.start_activity(
@@ -1209,7 +1207,7 @@ class Phase6FinalWorkflow:
             retry_policy=RetryPolicy(maximum_attempts=2),
         )
 
-        chapter_dir = f"phase6_outputs/chapter_{input.chapter_number}"
+        chapter_dir = f"phase7_outputs/chapter_{input.chapter_number}"
         scene_brief_fut = workflow.start_activity(
             load_artifact_activity,
             args=[input.project_id, f"{chapter_dir}/scene_brief.md"],
@@ -1282,7 +1280,7 @@ class Phase6FinalWorkflow:
                 0.6,
                 12000,
                 input.project_id,
-                "phase6-final-revise",
+                "phase7-final-revise",
             ],
             start_to_close_timeout=workflow.timedelta(minutes=10),
             retry_policy=RetryPolicy(maximum_attempts=3),
@@ -1298,4 +1296,4 @@ class Phase6FinalWorkflow:
         )
 
         self._current_status = "completed"
-        return Phase6StepOutput(artifact=final_chapter, status="completed")
+        return Phase7StepOutput(artifact=final_chapter, status="completed")

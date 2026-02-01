@@ -82,7 +82,7 @@ class ProviderManager:
         
         # Try primary generation
         try:
-            return await self._generate_with_provider(
+            result = await self._generate_with_provider(
                 provider,
                 model,
                 prompt=prompt,
@@ -92,6 +92,9 @@ class ProviderManager:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+            if not isinstance(result, str) or not result.strip():
+                raise ValueError(f"Provider '{provider}' returned an empty response")
+            return result
         except Exception as e:
             # Check if backup provider is configured
             backup_provider = settings.backup_llm_provider
@@ -103,7 +106,7 @@ class ProviderManager:
             print(f"Primary provider '{provider}' failed: {e}. Falling back to '{backup_provider}'...")
             
             try:
-                return await self._generate_with_provider(
+                result = await self._generate_with_provider(
                     backup_provider,
                     backup_model,
                     prompt=prompt,
@@ -113,6 +116,9 @@ class ProviderManager:
                     temperature=temperature,
                     max_tokens=max_tokens,
                 )
+                if not isinstance(result, str) or not result.strip():
+                    raise ValueError(f"Provider '{backup_provider}' returned an empty response")
+                return result
             except Exception as backup_error:
                 raise Exception(
                     f"Both primary ({provider}) and backup ({backup_provider}) providers failed. "

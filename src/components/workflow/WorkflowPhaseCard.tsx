@@ -192,34 +192,30 @@ export function WorkflowPhaseCard({
 
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-2 lg:gap-3 pt-4 border-t border-border">
-        {!showOpenChapterStudio && (
-          <>
-            <Button
-              size="default"
-              disabled={activePhase.status === 'completed' || isRunning || !hasProject}
-              onClick={onRunPhase}
-              className="min-w-[120px] lg:min-w-[140px]"
-            >
-              {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-              <span className="hidden sm:inline">{isRunning ? 'Running...' : activePhase.status === 'in-progress' ? 'Continue Phase' : 'Run Phase'}</span>
-              <span className="sm:hidden">{isRunning ? '...' : 'Run'}</span>
-            </Button>
-            <Button variant="ghost" size="sm" disabled={!canRerun} onClick={onRunPhase}>
-              <RefreshCw className={`w-4 h-4 ${isRunning ? 'animate-spin' : ''}`} />
-              <span className="hidden lg:inline">Re-run</span>
-            </Button>
-          </>
-        )}
+        <>
+          <Button
+            size="default"
+            disabled={activePhase.status === 'completed' || isRunning || !hasProject}
+            onClick={onRunPhase}
+            className="min-w-[120px] lg:min-w-[140px]"
+          >
+            {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+            <span className="hidden sm:inline">{isRunning ? 'Running...' : activePhase.status === 'in-progress' ? 'Continue Phase' : 'Run Phase'}</span>
+            <span className="sm:hidden">{isRunning ? '...' : 'Run'}</span>
+          </Button>
+          <Button variant="ghost" size="sm" disabled={!canRerun} onClick={onRunPhase}>
+            <RefreshCw className={`w-4 h-4 ${isRunning ? 'animate-spin' : ''}`} />
+            <span className="hidden lg:inline">Re-run</span>
+          </Button>
+        </>
         <Button variant="outline" size="sm" disabled={!canViewOutputs} onClick={onViewOutputs}>
           <Eye className="w-4 h-4" />
           <span className="hidden md:inline">View Outputs</span>
         </Button>
-        {!showOpenChapterStudio && (
-          <Button variant="outline" size="sm" disabled={!canEditOutputs} onClick={onEditInEditor}>
-            <Edit className="w-4 h-4" />
-            <span className="hidden md:inline">Edit in Editor</span>
-          </Button>
-        )}
+        <Button variant="outline" size="sm" disabled={!canEditOutputs} onClick={onEditInEditor}>
+          <Edit className="w-4 h-4" />
+          <span className="hidden md:inline">Edit in Editor</span>
+        </Button>
       </div>
     </div>
   );

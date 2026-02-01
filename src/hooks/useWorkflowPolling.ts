@@ -68,12 +68,17 @@ export function useWorkflowPolling<TOutputs>({
           console.log('Phase:', phase);
           console.log('Raw outputs:', JSON.stringify(outputs, null, 2));
 
-          if (phase === 5 && projectId) {
+          if (phase === 6 && projectId) {
             try {
-              const outline = await apiClient.getArtifact(projectId, 'phase5_outputs/outline.md');
+              const outline = await apiClient.getArtifact(projectId, 'phase6_outputs/outline.md');
               outputs = { ...outputs, outline: outline.content };
             } catch (e) {
-              console.warn('Could not fetch outline artifact:', e);
+              try {
+                const outline = await apiClient.getArtifact(projectId, 'phase5_outputs/outline.md');
+                outputs = { ...outputs, outline: outline.content };
+              } catch (e2) {
+                console.warn('Could not fetch outline artifact:', e2);
+              }
             }
           }
 

@@ -56,6 +56,12 @@ export default function PhaseEditor() {
         outputs: ['characters.md', 'worldbuilding.md'],
       },
       5: {
+        name: 'Story Bible Compilation',
+        description: 'Compile a cohesive story bible for consistent drafting across the book/series.',
+        duration: '10-20 minutes',
+        outputs: ['story_bible.md'],
+      },
+      6: {
         name: 'Chapter Outline Creation',
         description: 'Create detailed chapter-by-chapter outline for your novel.',
         duration: '10-15 minutes',
@@ -65,7 +71,7 @@ export default function PhaseEditor() {
     return info;
   }, []);
 
-  const phaseIds = useMemo(() => [1, 2, 3, 4, 5], []);
+  const phaseIds = useMemo(() => [1, 2, 3, 4, 5, 6], []);
   const safePhaseId = phaseIds.includes(currentPhaseId) ? currentPhaseId : 1;
 
   const { data: project } = useProject(projectId);
