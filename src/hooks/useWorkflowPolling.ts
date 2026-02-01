@@ -53,7 +53,17 @@ export function useWorkflowPolling<TOutputs>({
         const statusData = await response.json();
 
         if (statusData.status === 'completed') {
+          // Clear workflow ID immediately to stop polling before showing dialog
+          setWorkflowId(null);
+          
           let outputs = statusData.outputs;
+          if (typeof outputs === 'string') {
+            try {
+              outputs = JSON.parse(outputs);
+            } catch {
+              // Leave as string; PhaseCompletionDialog has its own fallback rendering.
+            }
+          }
           console.log('=== PHASE COMPLETION DATA ===');
           console.log('Phase:', phase);
           console.log('Raw outputs:', JSON.stringify(outputs, null, 2));
@@ -77,8 +87,6 @@ export function useWorkflowPolling<TOutputs>({
             next.delete(phase);
             return next;
           });
-
-          setWorkflowId(null);
 
           await refetchProgress();
           setTimeout(() => refetchProgress(), 500);
@@ -111,6 +119,7 @@ export function useWorkflowPolling<TOutputs>({
     setIsCompletionDialogOpen,
     setReviewContent,
     setReviewDescription,
+    setReviewExpectedOutputs,
     setIsReviewDialogOpen,
     setRunningPhases,
     setWorkflowId,

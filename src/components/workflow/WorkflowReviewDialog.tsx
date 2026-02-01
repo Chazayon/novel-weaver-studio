@@ -37,7 +37,7 @@ export function WorkflowReviewDialog({
     const next: Record<string, string> = {};
     for (const key of fields) next[key] = '';
     setInputs(next);
-  }, [open]);
+  }, [open, fields]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,6 +118,7 @@ export function WorkflowReviewDialog({
                       setInputs((prev) => ({ ...prev, decision: opt }));
                       // If the only required field is decision, allow single-click submit.
                       if (fields.length === 1 && fields[0] === 'decision' && opt !== 'REVISE' && opt !== 'CUSTOM') {
+                        onOpenChange(false);
                         onSubmit({ decision: opt });
                       }
                     }}
@@ -168,6 +169,7 @@ export function WorkflowReviewDialog({
               const payload: Record<string, string> = {};
               for (const key of fields) payload[key] = inputs[key] || '';
               for (const key of extraKeys) payload[key] = inputs[key] || '';
+              onOpenChange(false);
               onSubmit(payload);
             }}
             disabled={fields.length === 0 || isSubmitDisabled}

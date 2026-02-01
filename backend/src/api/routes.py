@@ -320,6 +320,7 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
                 project_id=project_id,
                 extra_notes=request.inputs.get("extra_notes"),
                 auto_approve=request.inputs.get("auto_approve", False),
+                run_risk_audit=request.inputs.get("run_risk_audit", False),
             )
             
             workflow_id = f"phase2-{project_id}-{uuid.uuid4()}"
@@ -345,7 +346,10 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
         elif phase == 3:
             from ..workflows.phase3_call_sheet import Phase3CallSheetWorkflow, Phase3Input
             
-            workflow_input = Phase3Input(project_id=project_id)
+            workflow_input = Phase3Input(
+                project_id=project_id,
+                auto_approve=request.inputs.get("auto_approve", False),
+            )
             
             workflow_id = f"phase3-{project_id}-{uuid.uuid4()}"
             
@@ -370,9 +374,14 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
         elif phase == 4:
             from ..workflows.phase4_characters import Phase4CharactersWorldbuildingWorkflow, Phase4Input
             
-            workflow_input = Phase4Input(project_id=project_id)
+            step = request.inputs.get("step", "full")
+            workflow_input = Phase4Input(
+                project_id=project_id,
+                step=step,
+                auto_approve=request.inputs.get("auto_approve", False),
+            )
             
-            workflow_id = f"phase4-{project_id}-{uuid.uuid4()}"
+            workflow_id = f"phase4-{project_id}-{step}-{uuid.uuid4()}"
             
             handle = await client.start_workflow(
                 Phase4CharactersWorldbuildingWorkflow.run,

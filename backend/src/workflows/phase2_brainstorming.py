@@ -25,6 +25,7 @@ class Phase2Input:
     project_id: str
     extra_notes: str | None = None
     auto_approve: bool = False  # For testing
+    run_risk_audit: bool = False  # Optional risk audit
 
 
 @dataclass
@@ -43,12 +44,44 @@ class Phase2BrainstormingWorkflow:
     Workflow steps:
     1. Load Phase 1 context bundle
     2. Generate series outline
-    3. Save series outline
-    4. Human review (APPROVE or REVISE)
-    5. If REVISE: collect notes, regenerate, repeat
-    6. Update context bundle with approved outline
-    7. Save updated context bundle
+    3. Human review (APPROVE or REVISE)
+    4. If REVISE: collect notes, regenerate, repeat
+    5. Extract series_constraints.json from approved outline
+    6. Optional: Run risk audit (genre mismatches, missing stakes, etc.)
+    7. Save series outline, constraints JSON, and optional audit
+    8. Update context bundle with approved outline
+    9. Save updated context bundle
     """
+    
+    def __init__(self) -> None:
+        self._current_status = "starting"
+        self._pending_content: str | None = None
+        self._pending_description: str | None = None
+        self._pending_expected_outputs: list[str] | None = None
+        self._human_input: Dict[str, str] | None = None
+    
+    @workflow.query
+    def get_current_status(self) -> str:
+        return self._current_status
+    
+    @workflow.query
+    def get_pending_content(self) -> str | None:
+        return self._pending_content
+    
+    @workflow.query
+    def get_pending_description(self) -> str | None:
+        return self._pending_description
+    
+    @workflow.query
+    def get_pending_expected_outputs(self) -> list[str] | None:
+        return self._pending_expected_outputs
+
+    @workflow.signal
+    async def human_input_received(self, inputs: Dict[str, str]) -> None:
+        """Receive human input from the API and resume the workflow."""
+        self._human_input = inputs
+        # Prevent the UI from re-opening the same pending review while we process the response
+        self._current_status = "processing_review"
     
     @workflow.run
     async def run(self, input: Phase2Input) -> Phase2Output:
@@ -70,6 +103,7 @@ class Phase2BrainstormingWorkflow:
         
         # Step 2: Generate series outline (with revision loop)
         workflow.logger.info("Generating series outline")
+        self._current_status = "generating_outline"
         
         series_outline = await self._generate_series_outline(
             context_bundle=context_bundle,
@@ -78,8 +112,94 @@ class Phase2BrainstormingWorkflow:
             project_id=input.project_id,
         )
         
-        # Step 3: Save series outline
-        workflow.logger.info("Saving series outline")
+        # Step 3: Extract series_constraints.json
+        workflow.logger.info("Extracting series_constraints.json")
+        self._current_status = "extracting_constraints"
+        
+        constraints_json = await workflow.execute_activity(
+            llm_generate_activity,
+            args=[
+                "default",
+                "default",
+                """You are a data extraction specialist.""",
+                f"""<context_bundle>
+{context_bundle}
+</context_bundle>
+
+<series_outline>
+{series_outline}
+</series_outline>
+
+Extract structured constraints and metadata from the series outline and context bundle.
+
+Output valid JSON with this structure:
+{{
+  "series_type": "standalone/trilogy/long_series",
+  "pov_plan": "single/rotating/multiple",
+  "target_length": "number of books or chapters",
+  "must_include": ["constraint1", "constraint2"],
+  "must_avoid": ["constraint1", "constraint2"],
+  "rating": "G/PG/PG-13/R/etc",
+  "heat_level": "none/mild/moderate/explicit",
+  "themes": ["theme1", "theme2"],
+  "genre_tropes": ["trope1", "trope2"]
+}}
+
+Output ONLY valid JSON, no markdown fences.""",
+                0.2,
+                3000,
+                input.project_id,
+                "phase2-constraints-json",
+            ],
+            start_to_close_timeout=workflow.timedelta(minutes=3),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+        
+        # Step 4: Optional risk audit
+        risk_audit = ""
+        if input.run_risk_audit:
+            workflow.logger.info("Running series outline risk audit")
+            self._current_status = "running_risk_audit"
+            
+            risk_audit = await workflow.execute_activity(
+                llm_generate_activity,
+                args=[
+                    "default",
+                    "default",
+                    """You are a story development critic who identifies potential issues in series outlines.""",
+                    f"""<context_bundle>
+{context_bundle}
+</context_bundle>
+
+<series_outline>
+{series_outline}
+</series_outline>
+
+Analyze this series outline for potential issues:
+
+1. **Genre Expectation Mismatches**: Does it deliver on genre promises?
+2. **Missing Stakes**: Are the stakes clear and escalating?
+3. **Unclear Antagonist Pressure**: Is the antagonist force well-defined and compelling?
+4. **Hook Quality**: Does it grab attention early?
+5. **Character Agency**: Do characters drive the plot or just react?
+6. **Pacing Issues**: Does the structure feel balanced?
+
+For each category, provide:
+- **Status**: Good | Needs Work | Missing
+- **Brief Note**: 1-2 sentences
+
+Output as Markdown with clear headings.""",
+                    0.3,
+                    4000,
+                    input.project_id,
+                    "phase2-risk-audit",
+                ],
+                start_to_close_timeout=workflow.timedelta(minutes=3),
+                retry_policy=RetryPolicy(maximum_attempts=3),
+            )
+        
+        # Step 5: Save series outline, constraints, and optional audit
+        workflow.logger.info("Saving series outline and artifacts")
         
         await workflow.execute_activity(
             save_artifact_activity,
@@ -87,8 +207,22 @@ class Phase2BrainstormingWorkflow:
             start_to_close_timeout=workflow.timedelta(seconds=30),
         )
         
-        # Step 4: Update context bundle with series outline
+        await workflow.execute_activity(
+            save_artifact_activity,
+            args=[input.project_id, "phase2_outputs/series_constraints.json", constraints_json],
+            start_to_close_timeout=workflow.timedelta(seconds=30),
+        )
+        
+        if risk_audit:
+            await workflow.execute_activity(
+                save_artifact_activity,
+                args=[input.project_id, "phase2_outputs/series_outline_audit.md", risk_audit],
+                start_to_close_timeout=workflow.timedelta(seconds=30),
+            )
+        
+        # Step 6: Update context bundle with series outline
         workflow.logger.info("Updating context bundle")
+        self._current_status = "updating_context_bundle"
         
         updated_context_bundle = await workflow.execute_activity(
             llm_generate_activity,
@@ -130,6 +264,7 @@ Return the full updated Context Bundle in Markdown.
         )
         
         workflow.logger.info("Phase 2 complete!")
+        self._current_status = "completed"
         
         return Phase2Output(
             series_outline=series_outline,
@@ -194,25 +329,46 @@ Output in clean Markdown with headings.""",
         max_revisions = 5
         for revision_count in range(max_revisions):
             workflow.logger.info(f"Requesting human review (attempt {revision_count + 1})")
+            self._current_status = "waiting_for_review"
             
-            # Request approval or revision
-            decision = await workflow.execute_activity(
-                human_input_activity,
-                args=[
-                    f"""## Series Outline Review
+            # Set pending review state for frontend
+            self._pending_content = f"""## Series Outline Review
 
 {series_outline}
 
 ---
 
-**Review the Series Outline above.**
+**Review the series outline above.**
 
-Type **APPROVE** to lock it in, or type **REVISE** to request changes.""",
+Type **APPROVE** to lock it in, or type **REVISE** to request changes."""
+            self._pending_description = "Review the generated series outline"
+            self._pending_expected_outputs = ["decision"]
+            self._human_input = None
+            
+            # Request approval or revision
+            await workflow.execute_activity(
+                human_input_activity,
+                args=[
+                    self._pending_content,
                     ["decision"],
                 ],
-                start_to_close_timeout=workflow.timedelta(hours=24),
+                start_to_close_timeout=workflow.timedelta(minutes=2),
                 retry_policy=RetryPolicy(maximum_attempts=1),
             )
+
+            # Wait for signal from API
+            await workflow.wait_condition(
+                lambda: self._human_input is not None,
+                timeout=workflow.timedelta(hours=24),
+            )
+
+            decision = self._human_input or {}
+            
+            # Clear pending state
+            self._pending_content = None
+            self._pending_description = None
+            self._pending_expected_outputs = None
+            self._current_status = "processing_review"
             
             # Check decision (case-insensitive)
             decision_text = decision.get("decision", "").strip().upper()
@@ -225,22 +381,40 @@ Type **APPROVE** to lock it in, or type **REVISE** to request changes.""",
                 workflow.logger.info("Revision requested")
                 
                 # Collect revision notes
-                revision_input = await workflow.execute_activity(
+                self._current_status = "waiting_for_review"
+                self._pending_content = """## Revision Notes
+
+Describe what needs to change in the series outline (bullets are best). The agent will revise based on your notes."""
+                self._pending_description = "Provide revision notes"
+                self._pending_expected_outputs = ["revision_notes"]
+                self._human_input = None
+                
+                await workflow.execute_activity(
                     human_input_activity,
                     args=[
-                        """## Revision Notes
-
-Paste specific changes you want (bullets are best). The agent will revise the outline based on your notes.""",
+                        self._pending_content,
                         ["revision_notes"],
                     ],
-                    start_to_close_timeout=workflow.timedelta(hours=24),
+                    start_to_close_timeout=workflow.timedelta(minutes=2),
                     retry_policy=RetryPolicy(maximum_attempts=1),
                 )
+
+                await workflow.wait_condition(
+                    lambda: self._human_input is not None,
+                    timeout=workflow.timedelta(hours=24),
+                )
+
+                revision_input = self._human_input or {}
+                
+                self._pending_content = None
+                self._pending_description = None
+                self._pending_expected_outputs = None
                 
                 revision_notes = revision_input.get("revision_notes", "")
                 
-                # Revise the outline
+                # Revise the series outline
                 workflow.logger.info("Revising series outline")
+                self._current_status = "revising_outline"
                 
                 series_outline = await workflow.execute_activity(
                     llm_generate_activity,

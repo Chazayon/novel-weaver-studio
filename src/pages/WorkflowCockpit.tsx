@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 
 // Type definitions for component state
 interface PhaseCompletionData {
@@ -75,7 +75,7 @@ export default function WorkflowCockpit() {
   // Fetch project data
   const { data: progressData, refetch: refetchProgress } = useProjectProgress(projectId);
   const { data: artifactsData } = useArtifacts(projectId);
-  const { data: pendingInputs } = usePendingInputs(projectId, { refetchInterval: 5000 });
+  const { data: pendingInputs, refetch: refetchPendingInputs } = usePendingInputs(projectId, { refetchInterval: 5000 });
   const { data: chaptersData } = useChapters(projectId);
   const executePhase = useExecutePhase();
   const cancelWorkflow = useCancelWorkflow();
@@ -98,6 +98,8 @@ export default function WorkflowCockpit() {
   const [reviewContent, setReviewContent] = useState<string>('');
   const [reviewDescription, setReviewDescription] = useState<string>('');
   const [reviewExpectedOutputs, setReviewExpectedOutputs] = useState<string[]>([]);
+
+  const lastHandledPendingRef = useRef<{ workflowId: string; phase: number; prompt: string } | null>(null);
   const [phase1FormData, setPhase1FormData] = useState({
     genre: '',
     book_title: '',
@@ -182,6 +184,16 @@ export default function WorkflowCockpit() {
     );
 
     if (currentPending && !isReviewDialogOpen) {
+      const last = lastHandledPendingRef.current;
+      if (
+        last &&
+        last.workflowId === currentPending.workflowId &&
+        last.phase === currentPending.phase &&
+        (currentPending.prompt || '') === last.prompt
+      ) {
+        return;
+      }
+
       console.log('Opening review dialog for pending input:', currentPending);
       
       // Try to parse and format the content nicely
@@ -205,6 +217,18 @@ export default function WorkflowCockpit() {
       setIsReviewDialogOpen(true);
     }
   }, [pendingInputs, currentPhase, currentWorkflowId, isReviewDialogOpen]);
+
+  // Clear the "last handled" guard once the backend stops reporting that pending item.
+  useEffect(() => {
+    const last = lastHandledPendingRef.current;
+    if (!last) return;
+    const stillPending = (pendingInputs || []).some(
+      (p) => p.workflowId === last.workflowId && p.phase === last.phase && (p.prompt || '') === last.prompt
+    );
+    if (!stillPending) {
+      lastHandledPendingRef.current = null;
+    }
+  }, [pendingInputs]);
 
   // Convert backend progress data to Phase format
   const phases: Phase[] = progressData?.phases.map(p => {
@@ -696,6 +720,13 @@ export default function WorkflowCockpit() {
     if (!currentWorkflowId) return;
 
     try {
+      // Prevent immediate re-open from stale cached pending inputs.
+      lastHandledPendingRef.current = {
+        workflowId: currentWorkflowId,
+        phase: currentWorkflowPhase ?? currentPhase,
+        prompt: reviewDescription || '',
+      };
+
       await apiClient.respondToWorkflow(currentWorkflowId, {
         inputs,
       });
@@ -708,6 +739,7 @@ export default function WorkflowCockpit() {
 
       // Refetch to update UI
       await refetchProgress();
+      await refetchPendingInputs();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to submit response';
       toast({

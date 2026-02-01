@@ -100,6 +100,8 @@ class Phase1InitialSetupWorkflow:
 
         self._context_approval = decision.strip().upper()
         self._revision_notes = notes
+        # Stop advertising this workflow as waiting for review as soon as input arrives
+        self._current_status = "processing_review"
         workflow.logger.info(f"Received context approval signal: {self._context_approval}")
     
     @workflow.run
@@ -385,6 +387,9 @@ Type **REVISE** if you want to make changes (you'll be asked for revision notes)
                 lambda: self._context_approval is not None,
                 timeout=workflow.timedelta(hours=24),
             )
+
+            # We have a response; stop advertising this workflow as "waiting_for_review"
+            self._current_status = "processing_review"
             
             # Check decision
             if "APPROVE" in self._context_approval:
