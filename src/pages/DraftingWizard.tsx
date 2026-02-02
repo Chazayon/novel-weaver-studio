@@ -737,6 +737,51 @@ export default function DraftingWizard() {
                   className="h-full"
                 />
               </div>
+
+              <div className="mt-3 pt-3 border-t border-border flex flex-col gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">
+                    {wizardState?.steps?.[activeStep]?.approvedAt
+                      ? `Approved: ${wizardState.steps[activeStep]?.approvedAt}`
+                      : 'Not approved yet'}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => approveStep(activeStep)}
+                      disabled={!wizardState?.steps?.[activeStep]?.generatedAt}
+                    >
+                      Approve step
+                    </Button>
+
+                    {activeStep === 'final' ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={goToNextChapter}
+                        disabled={!canGoToNextChapter}
+                      >
+                        Next chapter
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (activeStepIndex < STEP_ORDER.length - 1 && canEnterStep(activeStepIndex + 1)) {
+                            setActiveStepIndex(activeStepIndex + 1);
+                          }
+                        }}
+                        disabled={!wizardState?.steps?.[activeStep]?.approvedAt}
+                      >
+                        Next step
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
