@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 
+import { motion } from 'framer-motion';
+
 // Type definitions for component state
 interface PhaseCompletionData {
   artifacts?: {
@@ -179,7 +181,7 @@ export default function WorkflowCockpit() {
     if (!pendingInputs || pendingInputs.length === 0) return;
 
     // Check if there's a pending input for the current running phase
-    const currentPending = pendingInputs.find(input => 
+    const currentPending = pendingInputs.find(input =>
       input.phase === currentPhase && input.workflowId === currentWorkflowId
     );
 
@@ -195,10 +197,10 @@ export default function WorkflowCockpit() {
       }
 
       console.log('Opening review dialog for pending input:', currentPending);
-      
+
       // Try to parse and format the content nicely
       let formattedContent = currentPending.currentContent || currentPending.prompt || '';
-      
+
       // If content looks like JSON, try to extract the actual content
       try {
         const parsed = JSON.parse(formattedContent);
@@ -210,7 +212,7 @@ export default function WorkflowCockpit() {
       } catch (e) {
         // Not JSON, use as-is
       }
-      
+
       setReviewContent(formattedContent);
       setReviewDescription(currentPending.prompt || 'Please review and provide your decision.');
       setReviewExpectedOutputs(currentPending.expectedOutputs || []);
@@ -511,7 +513,7 @@ export default function WorkflowCockpit() {
   // Get actual phase output content from stored data
   const getPhaseOutputContent = () => {
     const storedOutput = phaseOutputs[activePhase.id];
-    
+
     if (!storedOutput) {
       return "No output available yet. Please run this phase to generate outputs.";
     }
@@ -703,12 +705,12 @@ export default function WorkflowCockpit() {
       // Get detailed error message
       let errorMessage = 'Failed to start phase';
       let errorDetails = '';
-      
+
       if (error && typeof error === 'object' && 'response' in error) {
         const responseError = error as { response?: { data?: { detail?: unknown; message?: string } } };
         const detail = responseError.response?.data?.detail;
         const message = responseError.response?.data?.message;
-        
+
         if (Array.isArray(detail)) {
           errorMessage = detail.map((e: ValidationError) =>
             `${e.loc?.join('.') || 'field'}: ${e.msg}`
@@ -718,7 +720,7 @@ export default function WorkflowCockpit() {
         } else if (message) {
           errorMessage = message;
         }
-        
+
         // Add full error details for backend debugging
         errorDetails = JSON.stringify(responseError.response?.data, null, 2);
       } else if (error instanceof Error) {
@@ -1113,6 +1115,6 @@ export default function WorkflowCockpit() {
           }
         }}
       />
-    </AppLayout >
+    </AppLayout>
   );
 }

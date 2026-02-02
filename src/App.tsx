@@ -21,22 +21,36 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<ProjectPicker />} />
-          <Route path="/cockpit" element={<WorkflowCockpit />} />
-          <Route path="/chapter-studio" element={<ChapterStudio />} />
-          <Route path="/phase-editor/:phaseId" element={<PhaseEditor />} />
-          <Route path="/compile" element={<CompileExport />} />
-          <Route path="/llm-settings" element={<LLMSettings />} />
-          <Route path="/phase5-context" element={<Phase5ContextBundleWizard />} />
-          <Route path="/phase6-wizard" element={<DraftingWizard />} />
-          <Route path="/drafting-wizard" element={<DraftingWizard />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AnimatedRoutes />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
+
+// Extracted to use useLocation hook inside BrowserRouter context
+import { AnimatePresence } from "framer-motion";
+import { useLocation } from "react-router-dom";
+
+const AnimatedRoutes = () => {
+  const location = useLocation();
+
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<ProjectPicker />} />
+        <Route path="/cockpit" element={<WorkflowCockpit />} />
+        <Route path="/chapter-studio" element={<ChapterStudio />} />
+        <Route path="/phase-editor/:phaseId" element={<PhaseEditor />} />
+        <Route path="/compile" element={<CompileExport />} />
+        <Route path="/llm-settings" element={<LLMSettings />} />
+        <Route path="/phase5-context" element={<Phase5ContextBundleWizard />} />
+        <Route path="/phase6-wizard" element={<DraftingWizard />} />
+        <Route path="/drafting-wizard" element={<DraftingWizard />} />
+        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </AnimatePresence>
+  );
+};
 
 export default App;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import AnimatedPage from '@/components/AnimatedPage';
 import { useProjectContext } from '@/hooks/useProjectContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChapterRow } from '@/components/shared/ChapterRow';
@@ -65,7 +66,7 @@ export default function ChapterStudio() {
   const [draftContent, setDraftContent] = useState('');
   const [improvementPlanContent, setImprovementPlanContent] = useState('');
   const [finalContent, setFinalContent] = useState('');
-  
+
   // Previous chapter content for continuity
   const [previousChapterContent, setPreviousChapterContent] = useState('');
 
@@ -662,324 +663,332 @@ export default function ChapterStudio() {
   const completedChapters = chapters.filter(c => c.final === 'completed').length;
   const totalWords = chapters.reduce((sum, c) => sum + c.wordCount, 0);
 
+
+
+  // ... previous code
+
   return (
-    <AppLayout>
-      <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Review</DialogTitle>
-            <DialogDescription>{reviewDescription}</DialogDescription>
-          </DialogHeader>
+    <AnimatedPage>
+      <AppLayout>
+        {/* ... rest of the component ... */}
 
-          <div className="space-y-4">
-            <Textarea
-              value={reviewContent}
-              readOnly
-              className="min-h-[240px] font-mono text-sm bg-muted/30 border-border"
-            />
+        <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Review</DialogTitle>
+              <DialogDescription>{reviewDescription}</DialogDescription>
+            </DialogHeader>
 
-            {reviewExpectedOutputs.map((key) => (
-              <div key={key} className="space-y-2">
-                <Label>{key}</Label>
-                <Textarea
-                  value={reviewInputs[key] || ''}
-                  onChange={(e) => setReviewInputs((prev) => ({ ...prev, [key]: e.target.value }))}
-                  className="min-h-[80px] bg-muted/30 border-border"
-                />
-              </div>
-            ))}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsReviewDialogOpen(false)}>
-              Close
-            </Button>
-            <Button onClick={handleSubmitReview} disabled={!currentWorkflowId}>
-              Submit
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isNextChapterDialogOpen} onOpenChange={setIsNextChapterDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Final saved</DialogTitle>
-            <DialogDescription>
-              Move to the next chapter?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsNextChapterDialogOpen(false)}>
-              Stay
-            </Button>
-            <Button
-              onClick={() => {
-                setIsNextChapterDialogOpen(false);
-                if (selectedChapterNumber < chapters.length) {
-                  setSelectedChapterNumber(selectedChapterNumber + 1);
-                }
-              }}
-              disabled={selectedChapterNumber >= chapters.length}
-            >
-              Next chapter
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Left - Chapter list */}
-        <CollapsiblePanel
-          title="Chapters"
-          icon={<List className="w-4 h-4" />}
-          isOpen={isChaptersOpen}
-          onToggle={toggleChaptersOpen}
-          side="left"
-        >
-          <div className="p-3 lg:p-4 border-b border-border">
-            <div className="flex items-center gap-3 lg:gap-4 text-xs lg:text-sm text-muted-foreground">
-              <span>{completedChapters}/{chapters.length} complete</span>
-              <span>{totalWords.toLocaleString()} words</span>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-1.5 lg:space-y-2 max-h-[calc(100vh-12rem)]">
-            {chapters.map((chapter) => (
-              <ChapterRow
-                key={chapter.id}
-                chapter={chapter}
-                isActive={selectedChapter.id === chapter.id}
-                onClick={() => setSelectedChapterNumber(chapter.number)}
-                onContinue={() => setSelectedChapterNumber(chapter.number)}
+            <div className="space-y-4">
+              <Textarea
+                value={reviewContent}
+                readOnly
+                className="min-h-[240px] font-mono text-sm bg-muted/30 border-border"
               />
-            ))}
-          </div>
-        </CollapsiblePanel>
 
-        {/* Center - Editor workspace */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden min-h-0">
-          {/* Chapter header */}
-          <div className="p-3 lg:p-4 border-b border-border flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 lg:gap-4 min-w-0">
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => {
-                    const idx = chapters.findIndex(c => c.id === selectedChapter?.id);
-                    if (idx > 0) setSelectedChapterNumber(chapters[idx - 1].number);
-                  }}
-                  disabled={!chapters.length || chapters[0]?.id === selectedChapter?.id}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => {
-                    const idx = chapters.findIndex(c => c.id === selectedChapter?.id);
-                    if (idx < chapters.length - 1) setSelectedChapterNumber(chapters[idx + 1].number);
-                  }}
-                  disabled={!chapters.length || chapters[chapters.length - 1]?.id === selectedChapter?.id}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-display text-base lg:text-xl font-semibold truncate">
-                  Chapter {selectedChapter.number}: {selectedChapter.title}
-                </h3>
-                <p className="text-xs lg:text-sm text-muted-foreground">
-                  {selectedChapter.wordCount.toLocaleString()} words
-                </p>
+              {reviewExpectedOutputs.map((key) => (
+                <div key={key} className="space-y-2">
+                  <Label>{key}</Label>
+                  <Textarea
+                    value={reviewInputs[key] || ''}
+                    onChange={(e) => setReviewInputs((prev) => ({ ...prev, [key]: e.target.value }))}
+                    className="min-h-[80px] bg-muted/30 border-border"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsReviewDialogOpen(false)}>
+                Close
+              </Button>
+              <Button onClick={handleSubmitReview} disabled={!currentWorkflowId}>
+                Submit
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isNextChapterDialogOpen} onOpenChange={setIsNextChapterDialogOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Final saved</DialogTitle>
+              <DialogDescription>
+                Move to the next chapter?
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsNextChapterDialogOpen(false)}>
+                Stay
+              </Button>
+              <Button
+                onClick={() => {
+                  setIsNextChapterDialogOpen(false);
+                  if (selectedChapterNumber < chapters.length) {
+                    setSelectedChapterNumber(selectedChapterNumber + 1);
+                  }
+                }}
+                disabled={selectedChapterNumber >= chapters.length}
+              >
+                Next chapter
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* Left - Chapter list */}
+          <CollapsiblePanel
+            title="Chapters"
+            icon={<List className="w-4 h-4" />}
+            isOpen={isChaptersOpen}
+            onToggle={toggleChaptersOpen}
+            side="left"
+          >
+            <div className="p-3 lg:p-4 border-b border-border">
+              <div className="flex items-center gap-3 lg:gap-4 text-xs lg:text-sm text-muted-foreground">
+                <span>{completedChapters}/{chapters.length} complete</span>
+                <span>{totalWords.toLocaleString()} words</span>
               </div>
             </div>
-            <Badge variant={selectedChapter.final === 'completed' ? 'success' : 'info'} className="shrink-0">
-              {selectedChapter.final === 'completed' ? 'Complete' : 'In Progress'}
-            </Badge>
-          </div>
 
-          {/* Editor tabs */}
-          <div className="flex-1 overflow-hidden min-h-0 h-full flex flex-col">
-            <EditorTabs
-              sceneBrief={chapterContent.sceneBrief}
-              draft={chapterContent.draft}
-              improvePlan={chapterContent.improvePlan}
-              final={chapterContent.final}
-              onSave={handleSaveArtifact}
-              onApprove={handleApproveArtifact}
-              onPromoteToNext={handlePromoteToNext}
-              onSaveAsFinal={handleSaveAsFinal}
-              onGenerateStep={handleGenerateStep}
-              projectId={projectId}
-              chapterNumber={selectedChapterNumber}
-              isGenerating={isRunning}
-            />
-          </div>
-        </div>
+            <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-1.5 lg:space-y-2 max-h-[calc(100vh-12rem)]">
+              {chapters.map((chapter) => (
+                <ChapterRow
+                  key={chapter.id}
+                  chapter={chapter}
+                  isActive={selectedChapter.id === chapter.id}
+                  onClick={() => setSelectedChapterNumber(chapter.number)}
+                  onContinue={() => setSelectedChapterNumber(chapter.number)}
+                />
+              ))}
+            </div>
+          </CollapsiblePanel>
 
-        {/* Right - Controls panel */}
-        <CollapsiblePanel
-          title="Controls"
-          icon={<Settings className="w-4 h-4" />}
-          isOpen={isControlsOpen}
-          onToggle={toggleControlsOpen}
-          side="right"
-        >
-          <div className="flex-1 overflow-y-auto p-4 space-y-6 max-h-[calc(100vh-8rem)]">
-            {/* Previous chapter preview */}
-            {selectedChapter.number > 1 && (
-              <div>
-                <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
-                  Previous Chapter
-                </Label>
-                <div className="glass-card p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <BookOpen className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium">
-                      Ch. {selectedChapter.number - 1}: {chapters[selectedChapter.number - 2]?.title}
-                    </span>
-                  </div>
-                  {previousChapterContent ? (
-                    <p className="text-xs text-muted-foreground line-clamp-3">
-                      {previousChapterContent.slice(0, 200)}...
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground italic">
-                      Previous chapter not yet completed
-                    </p>
-                  )}
+          {/* Center - Editor workspace */}
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden min-h-0">
+            {/* Chapter header */}
+            <div className="p-3 lg:p-4 border-b border-border flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 lg:gap-4 min-w-0">
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      const idx = chapters.findIndex(c => c.id === selectedChapter?.id);
+                      if (idx > 0) setSelectedChapterNumber(chapters[idx - 1].number);
+                    }}
+                    disabled={!chapters.length || chapters[0]?.id === selectedChapter?.id}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      const idx = chapters.findIndex(c => c.id === selectedChapter?.id);
+                      if (idx < chapters.length - 1) setSelectedChapterNumber(chapters[idx + 1].number);
+                    }}
+                    disabled={!chapters.length || chapters[chapters.length - 1]?.id === selectedChapter?.id}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
                 </div>
-              </div>
-            )}
-            
-            {selectedChapter.number === 1 && (
-              <div>
-                <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
-                  Starting Point
-                </Label>
-                <div className="glass-card p-3">
-                  <p className="text-xs text-muted-foreground">
-                    This is Chapter 1. No previous chapter context needed.
+                <div className="min-w-0">
+                  <h3 className="font-display text-base lg:text-xl font-semibold truncate">
+                    Chapter {selectedChapter.number}: {selectedChapter.title}
+                  </h3>
+                  <p className="text-xs lg:text-sm text-muted-foreground">
+                    {selectedChapter.wordCount.toLocaleString()} words
                   </p>
                 </div>
               </div>
-            )}
-
-            {/* Pinned artifacts */}
-            <div>
-              <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
-                Quick Reference
-              </Label>
-              <div className="space-y-2">
-                {pinnedArtifacts.slice(0, 4).map((artifact) => (
-                  <ArtifactCard key={artifact.id} artifact={artifact} compact />
-                ))}
-              </div>
+              <Badge variant={selectedChapter.final === 'completed' ? 'success' : 'info'} className="shrink-0">
+                {selectedChapter.final === 'completed' ? 'Complete' : 'In Progress'}
+              </Badge>
             </div>
 
-            {/* Settings */}
-            <div>
-              <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">
-                Generation Settings
-              </Label>
-
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="text-sm">Target Word Count</Label>
-                    <span className="text-sm font-medium text-primary">
-                      {targetWordCount[0].toLocaleString()}
-                    </span>
-                  </div>
-                  <Slider
-                    value={targetWordCount}
-                    onValueChange={setTargetWordCount}
-                    min={1000}
-                    max={6000}
-                    step={500}
-                    className="[&_[role=slider]]:bg-primary"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-sm mb-2 block">Tone</Label>
-                  <Select value={selectedTone} onValueChange={setSelectedTone}>
-                    <SelectTrigger className="bg-muted/50 border-border">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-card border-border">
-                      {tones.map((tone) => (
-                        <SelectItem key={tone.value} value={tone.value}>
-                          {tone.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-            
-            {/* Workflow Status */}
-            <div className="pt-4 border-t border-border">
-              <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">
-                Workflow Progress
-              </Label>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  {sceneBriefContent ? (
-                    <CheckCircle2 className="w-4 h-4 text-status-success" />
-                  ) : (
-                    <div className="w-4 h-4 rounded-full border-2 border-muted" />
-                  )}
-                  <span className={sceneBriefContent ? 'text-foreground' : 'text-muted-foreground'}>
-                    Scene Brief
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  {draftContent ? (
-                    <CheckCircle2 className="w-4 h-4 text-status-success" />
-                  ) : (
-                    <div className="w-4 h-4 rounded-full border-2 border-muted" />
-                  )}
-                  <span className={draftContent ? 'text-foreground' : 'text-muted-foreground'}>
-                    First Draft
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  {improvementPlanContent ? (
-                    <CheckCircle2 className="w-4 h-4 text-status-success" />
-                  ) : (
-                    <div className="w-4 h-4 rounded-full border-2 border-muted" />
-                  )}
-                  <span className={improvementPlanContent ? 'text-foreground' : 'text-muted-foreground'}>
-                    Improvement Plan
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  {finalContent ? (
-                    <CheckCircle2 className="w-4 h-4 text-status-success" />
-                  ) : (
-                    <div className="w-4 h-4 rounded-full border-2 border-muted" />
-                  )}
-                  <span className={finalContent ? 'text-foreground' : 'text-muted-foreground'}>
-                    Final Version
-                  </span>
-                </div>
-              </div>
-              
-              <div className="mt-4 p-3 rounded-lg bg-muted/30">
-                <p className="text-xs text-muted-foreground">
-                  Use the editor to generate, review, and approve each step. The workflow guides you through the process.
-                </p>
-              </div>
+            {/* Editor tabs */}
+            <div className="flex-1 overflow-hidden min-h-0 h-full flex flex-col">
+              <EditorTabs
+                sceneBrief={chapterContent.sceneBrief}
+                draft={chapterContent.draft}
+                improvePlan={chapterContent.improvePlan}
+                final={chapterContent.final}
+                onSave={handleSaveArtifact}
+                onApprove={handleApproveArtifact}
+                onPromoteToNext={handlePromoteToNext}
+                onSaveAsFinal={handleSaveAsFinal}
+                onGenerateStep={handleGenerateStep}
+                projectId={projectId}
+                chapterNumber={selectedChapterNumber}
+                isGenerating={isRunning}
+              />
             </div>
           </div>
-        </CollapsiblePanel>
-      </div>
-    </AppLayout>
+
+          {/* Right - Controls panel */}
+          <CollapsiblePanel
+            title="Controls"
+            icon={<Settings className="w-4 h-4" />}
+            isOpen={isControlsOpen}
+            onToggle={toggleControlsOpen}
+            side="right"
+          >
+            <div className="flex-1 overflow-y-auto p-4 space-y-6 max-h-[calc(100vh-8rem)]">
+              {/* Previous chapter preview */}
+              {selectedChapter.number > 1 && (
+                <div>
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
+                    Previous Chapter
+                  </Label>
+                  <div className="glass-card p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <BookOpen className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium">
+                        Ch. {selectedChapter.number - 1}: {chapters[selectedChapter.number - 2]?.title}
+                      </span>
+                    </div>
+                    {previousChapterContent ? (
+                      <p className="text-xs text-muted-foreground line-clamp-3">
+                        {previousChapterContent.slice(0, 200)}...
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">
+                        Previous chapter not yet completed
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {selectedChapter.number === 1 && (
+                <div>
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
+                    Starting Point
+                  </Label>
+                  <div className="glass-card p-3">
+                    <p className="text-xs text-muted-foreground">
+                      This is Chapter 1. No previous chapter context needed.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Pinned artifacts */}
+              <div>
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
+                  Quick Reference
+                </Label>
+                <div className="space-y-2">
+                  {pinnedArtifacts.slice(0, 4).map((artifact) => (
+                    <ArtifactCard key={artifact.id} artifact={artifact} compact />
+                  ))}
+                </div>
+              </div>
+
+              {/* Settings */}
+              <div>
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">
+                  Generation Settings
+                </Label>
+
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label className="text-sm">Target Word Count</Label>
+                      <span className="text-sm font-medium text-primary">
+                        {targetWordCount[0].toLocaleString()}
+                      </span>
+                    </div>
+                    <Slider
+                      value={targetWordCount}
+                      onValueChange={setTargetWordCount}
+                      min={1000}
+                      max={6000}
+                      step={500}
+                      className="[&_[role=slider]]:bg-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-sm mb-2 block">Tone</Label>
+                    <Select value={selectedTone} onValueChange={setSelectedTone}>
+                      <SelectTrigger className="bg-muted/50 border-border">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card border-border">
+                        {tones.map((tone) => (
+                          <SelectItem key={tone.value} value={tone.value}>
+                            {tone.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Workflow Status */}
+              <div className="pt-4 border-t border-border">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider mb-3 block">
+                  Workflow Progress
+                </Label>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    {sceneBriefContent ? (
+                      <CheckCircle2 className="w-4 h-4 text-status-success" />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full border-2 border-muted" />
+                    )}
+                    <span className={sceneBriefContent ? 'text-foreground' : 'text-muted-foreground'}>
+                      Scene Brief
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    {draftContent ? (
+                      <CheckCircle2 className="w-4 h-4 text-status-success" />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full border-2 border-muted" />
+                    )}
+                    <span className={draftContent ? 'text-foreground' : 'text-muted-foreground'}>
+                      First Draft
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    {improvementPlanContent ? (
+                      <CheckCircle2 className="w-4 h-4 text-status-success" />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full border-2 border-muted" />
+                    )}
+                    <span className={improvementPlanContent ? 'text-foreground' : 'text-muted-foreground'}>
+                      Improvement Plan
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    {finalContent ? (
+                      <CheckCircle2 className="w-4 h-4 text-status-success" />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full border-2 border-muted" />
+                    )}
+                    <span className={finalContent ? 'text-foreground' : 'text-muted-foreground'}>
+                      Final Version
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 p-3 rounded-lg bg-muted/30">
+                  <p className="text-xs text-muted-foreground">
+                    Use the editor to generate, review, and approve each step. The workflow guides you through the process.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CollapsiblePanel>
+        </div>
+      </AppLayout>
+    </AnimatedPage>
   );
 }
