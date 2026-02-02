@@ -5,18 +5,18 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 active:scale-95",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/30",
+          "bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/40 hover:-translate-y-0.5",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-lg shadow-destructive/25 hover:bg-destructive/90",
+          "bg-destructive text-destructive-foreground shadow-lg shadow-destructive/25 hover:bg-destructive/90 hover:shadow-xl hover:shadow-destructive/40",
         outline:
-          "border border-border bg-transparent hover:bg-muted hover:border-primary/50",
+          "border border-border bg-transparent hover:bg-muted hover:border-primary/50 hover:shadow-md",
         secondary:
-          "bg-secondary/20 text-secondary-foreground border border-secondary/30 hover:bg-secondary/30 hover:border-secondary/50",
+          "bg-secondary/20 text-secondary-foreground border border-secondary/30 hover:bg-secondary/30 hover:border-secondary/50 hover:shadow-lg hover:shadow-secondary/20",
         ghost: 
           "hover:bg-muted hover:text-foreground",
         link: 
@@ -24,7 +24,7 @@ const buttonVariants = cva(
         glass:
           "bg-muted/60 backdrop-blur-lg border border-border text-foreground hover:bg-muted/80 hover:border-primary/30",
         glow:
-          "bg-primary text-primary-foreground shadow-lg hover:shadow-xl",
+          "bg-primary text-primary-foreground shadow-lg hover:shadow-xl glow-primary hover:glow-primary-strong hover:-translate-y-1",
       },
       size: {
         default: "h-10 px-5 py-2",

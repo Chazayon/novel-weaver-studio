@@ -42,6 +42,7 @@ import {
   useProjectProgress,
   useArtifacts,
   useExecutePhase,
+  usePhaseStatus,
   usePendingInputs,
   useProjects,
   useCancelWorkflow,
@@ -101,7 +102,7 @@ export default function WorkflowCockpit() {
   const [reviewDescription, setReviewDescription] = useState<string>('');
   const [reviewExpectedOutputs, setReviewExpectedOutputs] = useState<string[]>([]);
 
-  const lastHandledPendingRef = useRef<{ workflowId: string; phase: number; prompt: string } | null>(null);
+  const lastHandledPendingRef = useRef<{ workflowId: string; phase: number } | null>(null);
   const [phase1FormData, setPhase1FormData] = useState({
     genre: '',
     book_title: '',
@@ -117,6 +118,7 @@ export default function WorkflowCockpit() {
   const [currentWorkflowPhase, setCurrentWorkflowPhase] = useState<number | null>(null);
   const [completionPhase, setCompletionPhase] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [isCompiling, setIsCompiling] = useState(false);
   const [activeTab, setActiveTab] = useState<'genre_tropes' | 'style_sheet' | 'context_bundle'>('genre_tropes');
   // Typed helper for chapters
   const chaptersList: ChapterDetail[] = useMemo(
@@ -190,8 +192,7 @@ export default function WorkflowCockpit() {
       if (
         last &&
         last.workflowId === currentPending.workflowId &&
-        last.phase === currentPending.phase &&
-        (currentPending.prompt || '') === last.prompt
+        last.phase === currentPending.phase
       ) {
         return;
       }
@@ -225,7 +226,7 @@ export default function WorkflowCockpit() {
     const last = lastHandledPendingRef.current;
     if (!last) return;
     const stillPending = (pendingInputs || []).some(
-      (p) => p.workflowId === last.workflowId && p.phase === last.phase && (p.prompt || '') === last.prompt
+      (p) => p.workflowId === last.workflowId && p.phase === last.phase
     );
     if (!stillPending) {
       lastHandledPendingRef.current = null;
@@ -283,6 +284,70 @@ export default function WorkflowCockpit() {
 
   const activePhase = phases.find((p) => p.id === currentPhase) || phases[0];
   const isRunning = runningPhases.has(currentPhase);
+
+  const liveStatusPhase = currentWorkflowPhase ?? currentPhase;
+  const { data: liveStatus } = usePhaseStatus(projectId, liveStatusPhase, currentWorkflowId ?? undefined, {
+    enabled: Boolean(projectId && currentWorkflowId && isRunning && liveStatusPhase === currentPhase),
+    refetchInterval: isRunning ? 1500 : false,
+  });
+
+  useEffect(() => {
+    if (!isRunning) return;
+    if (!liveStatus) return;
+    if (liveStatus.status === 'completed') {
+      setIsCompiling(true);
+    }
+    if (liveStatus.status === 'failed') {
+      setIsCompiling(false);
+      setRunningPhases((prev) => {
+        const next = new Set(prev);
+        next.delete(currentPhase);
+        return next;
+      });
+      setCurrentWorkflowId(null);
+      setCurrentWorkflowPhase(null);
+      toast({
+        title: 'Phase failed',
+        description: liveStatus.error || `Phase ${currentPhase} encountered an error.`,
+        variant: 'destructive',
+      });
+      void refetchProgress();
+    }
+  }, [isRunning, liveStatus, currentPhase, refetchProgress, toast]);
+
+  useEffect(() => {
+    if (isCompletionDialogOpen) setIsCompiling(false);
+  }, [isCompletionDialogOpen]);
+
+  const currentPhaseProgress = useMemo(() => {
+    if (isRunning && liveStatusPhase === currentPhase && typeof liveStatus?.progress === 'number') {
+      return liveStatus.progress;
+    }
+    return progressData?.phases.find((p) => p.phase === currentPhase)?.progress;
+  }, [currentPhase, isRunning, liveStatus?.progress, liveStatusPhase, progressData?.phases]);
+
+  const currentStep = useMemo(() => {
+    if (!isRunning) return undefined;
+    if (liveStatusPhase !== currentPhase) return undefined;
+    return liveStatus?.currentStep;
+  }, [currentPhase, isRunning, liveStatus?.currentStep, liveStatusPhase]);
+
+  const etaText = useMemo(() => {
+    if (!isRunning) return undefined;
+    const progress = typeof currentPhaseProgress === 'number' ? currentPhaseProgress : undefined;
+    if (!progress || progress <= 0 || progress >= 100) return undefined;
+    if (!elapsedTime || elapsedTime <= 5) return undefined;
+    const totalSeconds = elapsedTime / (progress / 100);
+    const remainingSeconds = Math.max(0, Math.round(totalSeconds - elapsedTime));
+    const mins = Math.floor(remainingSeconds / 60);
+    const secs = remainingSeconds % 60;
+    if (mins >= 60) {
+      const hours = Math.floor(mins / 60);
+      const remMins = mins % 60;
+      return `${hours}h ${remMins}m`;
+    }
+    return `${mins}m ${secs}s`;
+  }, [currentPhaseProgress, elapsedTime, isRunning]);
 
   const getRequiredInputsStatus = (phase: Phase | undefined) => {
     if (!phase) {
@@ -409,6 +474,16 @@ export default function WorkflowCockpit() {
     },
     setPhaseOutputsAndPersist,
   });
+
+  useEffect(() => {
+    if (!isCompletionDialogOpen) return;
+    const phaseNum = completionPhase ?? currentPhase;
+    const phaseName = getPhaseInfo(phaseNum).name;
+    toast({
+      title: 'Phase completed',
+      description: `Phase ${phaseNum}: ${phaseName} has finished successfully.`,
+    });
+  }, [completionPhase, currentPhase, isCompletionDialogOpen, toast]);
 
   // Show loading state if no project data yet
   if (!projectId || !progressData) {
@@ -597,6 +672,7 @@ export default function WorkflowCockpit() {
     const phaseNum = phaseToRun;
 
     try {
+      setIsCompiling(false);
       setRunningPhases(prev => new Set(prev).add(phaseNum));
       setWorkflowStartTimes(prev => ({ ...prev, [phaseNum]: Date.now() }));
 
@@ -661,44 +737,14 @@ export default function WorkflowCockpit() {
         title: 'Phase started',
         description: `Phase ${phaseNum}: ${phaseName} is now running.`,
       });
-
-      // Start polling for status
-      const pollInterval = setInterval(async () => {
-        const updated = await refetchProgress();
-        const phaseData = updated.data?.phases.find(p => p.phase === phaseNum);
-
-        if (phaseData?.status === 'completed' || phaseData?.status === 'failed') {
-          clearInterval(pollInterval);
-          setRunningPhases(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(phaseNum);
-            return newSet;
-          });
-
-          // Refresh progress one more time to ensure UI is in sync
-          setTimeout(() => refetchProgress(), 500);
-
-          if (phaseData.status === 'completed') {
-            toast({
-              title: 'Phase completed',
-              description: `Phase ${phaseNum}: ${phaseName} has finished successfully.`,
-            });
-          } else {
-            toast({
-              title: 'Phase failed',
-              description: `Phase ${phaseNum} encountered an error.`,
-              variant: 'destructive',
-            });
-          }
-        }
-      }, 3000);
-
     } catch (error: unknown) {
       setRunningPhases(prev => {
         const newSet = new Set(prev);
         newSet.delete(phaseNum);
         return newSet;
       });
+
+      setIsCompiling(false);
 
       console.error('Phase execution error:', error);
 
@@ -745,7 +791,6 @@ export default function WorkflowCockpit() {
       lastHandledPendingRef.current = {
         workflowId: currentWorkflowId,
         phase: currentWorkflowPhase ?? currentPhase,
-        prompt: reviewDescription || '',
       };
 
       await apiClient.respondToWorkflow(currentWorkflowId, {
@@ -936,7 +981,10 @@ export default function WorkflowCockpit() {
             inputsStatus={inputsStatus}
             isRunning={isRunning}
             elapsedTime={elapsedTime}
-            currentPhaseProgress={progressData?.phases.find(p => p.phase === currentPhase)?.progress}
+            currentPhaseProgress={currentPhaseProgress}
+            currentStep={currentStep}
+            etaText={etaText}
+            isCompiling={isCompiling}
             hasProject={Boolean(projectId)}
             canViewOutputs={Boolean(phaseOutputs[activePhase.id]) || activePhase.status !== 'not-started'}
             canEditOutputs={Boolean(phaseOutputs[activePhase.id]) || activePhase.status !== 'not-started'}

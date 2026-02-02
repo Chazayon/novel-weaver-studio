@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { BookOpen, Home, Layers, FileText, Download, Sparkles, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { motion } from 'framer-motion';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,9 +42,14 @@ export function AppLayout({ children }: AppLayoutProps) {
         <div className="container mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors">
-              <BookOpen className="w-5 h-5 text-primary" />
-            </div>
+            <motion.div
+              whileHover={{ scale: 1.05, rotate: 5 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-all glow-primary">
+                <BookOpen className="w-5 h-5 text-primary drop-shadow-lg" />
+              </div>
+            </motion.div>
             <div className="flex flex-col">
               <span className="text-lg font-display font-semibold gradient-text">Novel Studio</span>
               <span className="text-[10px] text-muted-foreground -mt-1">AI Writing Cockpit</span>
@@ -55,19 +61,24 @@ export function AppLayout({ children }: AppLayoutProps) {
             {primaryNavItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
-                <Link
+                <motion.div
                   key={item.path}
-                  to={item.path}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
-                    isActive
-                      ? "bg-primary/20 text-primary"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                 >
-                  <item.icon className="w-4 h-4" />
-                  <span className="hidden sm:inline">{item.label}</span>
-                </Link>
+                  <Link
+                    to={item.path}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300",
+                      isActive
+                        ? "bg-primary/20 text-primary shadow-lg shadow-primary/20"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    )}
+                  >
+                    <item.icon className={cn("w-4 h-4", isActive && "icon-primary drop-shadow-lg")} />
+                    <span className="hidden sm:inline">{item.label}</span>
+                  </Link>
+                </motion.div>
               );
             })}
             
@@ -108,10 +119,20 @@ export function AppLayout({ children }: AppLayoutProps) {
           </nav>
 
           {/* AI Status indicator */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
-            <Sparkles className="w-4 h-4 text-primary" />
+          <motion.div 
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 glow-primary"
+            animate={{ 
+              boxShadow: [
+                '0 0 20px hsl(var(--glow-primary) / 0.2)',
+                '0 0 30px hsl(var(--glow-primary) / 0.3)',
+                '0 0 20px hsl(var(--glow-primary) / 0.2)'
+              ]
+            }}
+            transition={{ duration: 2, repeat: Infinity }}
+          >
+            <Sparkles className="w-4 h-4 text-primary animate-pulse" />
             <span className="text-xs font-medium text-primary">Local Backend Ready</span>
-          </div>
+          </motion.div>
         </div>
       </header>
 

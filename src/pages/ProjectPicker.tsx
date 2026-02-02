@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ProjectCard } from '@/components/shared/ProjectCard';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -203,10 +204,21 @@ export default function ProjectPicker() {
 
               <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                 <DialogTrigger asChild>
-                  <Button size="lg" className="shrink-0">
-                    <Plus className="w-5 h-5" />
-                    Create New Project
-                  </Button>
+                  <motion.div
+                    animate={{
+                      boxShadow: [
+                        '0 0 20px hsl(var(--primary) / 0.3)',
+                        '0 0 35px hsl(var(--primary) / 0.5)',
+                        '0 0 20px hsl(var(--primary) / 0.3)'
+                      ]
+                    }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                  >
+                    <Button size="lg" className="shrink-0">
+                      <Plus className="w-5 h-5" />
+                      Create New Project
+                    </Button>
+                  </motion.div>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-md bg-card border-border">
                   <DialogHeader>
@@ -276,6 +288,8 @@ export default function ProjectPicker() {
                     <Button
                       onClick={handleCreateProject}
                       disabled={!newProject.title || !newProject.genre || createProjectMutation.isPending}
+                      variant="glow"
+                      className="glow-primary-strong"
                     >
                       {createProjectMutation.isPending && (
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />

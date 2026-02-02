@@ -47,10 +47,7 @@ export function useWorkflowPolling<TOutputs>({
 
     const pollStatus = async () => {
       try {
-        const response = await fetch(
-          `http://localhost:8000/api/projects/${projectId}/phases/${phase}/status?workflow_id=${workflowId}`
-        );
-        const statusData = await response.json();
+        const statusData = await apiClient.getPhaseStatus(projectId, phase, workflowId);
 
         if (statusData.status === 'completed') {
           // Clear workflow ID immediately to stop polling before showing dialog
@@ -68,24 +65,32 @@ export function useWorkflowPolling<TOutputs>({
           console.log('Phase:', phase);
           console.log('Raw outputs:', JSON.stringify(outputs, null, 2));
 
-          if (phase === 6 && projectId) {
-            try {
-              const outline = await apiClient.getArtifact(projectId, 'phase6_outputs/outline.md');
-              outputs = { ...outputs, outline: outline.content };
-            } catch (e) {
-              try {
-                const outline = await apiClient.getArtifact(projectId, 'phase5_outputs/outline.md');
-                outputs = { ...outputs, outline: outline.content };
-              } catch (e2) {
-                console.warn('Could not fetch outline artifact:', e2);
-              }
-            }
-          }
-
-          setCompletionData(outputs);
+          // Open dialog immediately; outputs can be enriched afterward.
+          setCompletionData(outputs as TOutputs);
           setIsCompletionDialogOpen(true);
+          setPhaseOutputsAndPersist((prev) => ({ ...prev, [phase]: outputs as TOutputs }));
 
-          setPhaseOutputsAndPersist((prev) => ({ ...prev, [phase]: outputs }));
+          if (phase === 6 && projectId) {
+            void (async () => {
+              const base = outputs;
+              if (!base || typeof base !== 'object') return;
+              try {
+                const outline = await apiClient.getArtifact(projectId, 'phase6_outputs/outline.md');
+                const enriched = { ...(base as Record<string, unknown>), outline: outline.content };
+                setCompletionData(enriched as TOutputs);
+                setPhaseOutputsAndPersist((prev) => ({ ...prev, [phase]: enriched as TOutputs }));
+              } catch (e) {
+                try {
+                  const outline = await apiClient.getArtifact(projectId, 'phase5_outputs/outline.md');
+                  const enriched = { ...(base as Record<string, unknown>), outline: outline.content };
+                  setCompletionData(enriched as TOutputs);
+                  setPhaseOutputsAndPersist((prev) => ({ ...prev, [phase]: enriched as TOutputs }));
+                } catch (e2) {
+                  console.warn('Could not fetch outline artifact:', e2);
+                }
+              }
+            })();
+          }
 
           setRunningPhases((prev) => {
             const next = new Set(prev);
@@ -98,20 +103,12 @@ export function useWorkflowPolling<TOutputs>({
           setTimeout(() => refetchProgress(), 1500);
           return;
         }
-
-        const pendingReview: PendingReview | undefined = statusData.outputs?.pending_review;
-        if (pendingReview) {
-          setReviewContent(pendingReview.content || '');
-          setReviewDescription(pendingReview.description || '');
-          setReviewExpectedOutputs?.(pendingReview.expectedOutputs || []);
-          setIsReviewDialogOpen(true);
-        }
       } catch (error) {
         console.error('Error checking status:', error);
       }
     };
 
-    const interval = setInterval(pollStatus, 3000);
+    const interval = setInterval(pollStatus, 1500);
     void pollStatus();
 
     return () => clearInterval(interval);

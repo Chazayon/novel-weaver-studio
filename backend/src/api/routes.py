@@ -741,7 +741,7 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                             
                     # Map status to progress
                     progress_map = {
-                        "starting": 5,
+                        "starting": 0,
                         "collecting_inputs": 10,
                         "waiting_for_inputs": 10,
                         "loading_context_bundle": 20,
@@ -749,6 +749,12 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                         "researching": 30,
                         "generating_stylesheets": 50,
                         "generating_context_bundle": 70,
+                        "generating_call_sheet": 70,
+                        "extracting_json": 85,
+                        "revising_call_sheet": 80,
+                        "extracting_constraints": 85,
+                        "running_risk_audit": 90,
+                        "revising_outline": 80,
                         "generating_story_bible": 70,
                         "saving_story_bible": 85,
                         "generating_outline": 70,
@@ -757,6 +763,9 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                         "saving_context_bundle": 85,
                         "parsing_outline": 90,
                         "waiting_for_review": 90,
+                        "revising_call_sheet": 80,
+                        "revising_characters": 80,
+                        "revising_worldbuilding": 80,
                         "revising": 80,
                         "processing_review": 90,
                         "curating_context_bundle": 70,
@@ -770,7 +779,7 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                         workflowId=workflow_id,
                         phase=phase,
                         status=PhaseStatus.IN_PROGRESS,
-                        progress=float(progress_map.get(current_status, 50)),
+                        progress=float(progress_map.get(current_status, 10)),
                         currentStep=current_status.replace("_", " ").title(),
                         outputs=outputs,
                     )
@@ -780,7 +789,7 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
                         workflowId=workflow_id,
                         phase=phase,
                         status=PhaseStatus.IN_PROGRESS,
-                        progress=50.0,
+                        progress=10.0,
                         outputs={},
                     )
             except Exception as e:
@@ -796,8 +805,8 @@ async def get_phase_status(project_id: str, phase: int, workflow_id: str | None 
             phase_status = PhaseStatus.COMPLETED
             progress = 100.0
         elif phase == state.get("current_phase", 1):
-            phase_status = PhaseStatus.IN_PROGRESS
-            progress = 50.0
+            phase_status = PhaseStatus.NOT_STARTED
+            progress = 0.0
         else:
             phase_status = PhaseStatus.NOT_STARTED
             progress = 0.0
@@ -1345,8 +1354,8 @@ async def get_project_progress(project_id: str):
             elif phase_num == inferred_current_phase:
                 phases.append(PhaseProgress(
                     phase=phase_num,
-                    status=PhaseStatus.IN_PROGRESS,
-                    progress=50.0,
+                    status=PhaseStatus.NOT_STARTED,
+                    progress=0.0,
                     started_at=None,
                     completed_at=None,
                 ))

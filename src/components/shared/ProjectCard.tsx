@@ -1,7 +1,8 @@
 import { Project } from '@/lib/mockData';
 import { cn } from '@/lib/utils';
-import { Calendar, BookOpen, MoreVertical, Archive, Trash2 } from 'lucide-react';
+import { Calendar, BookOpen, MoreVertical, Archive, Trash2, Sparkles } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { motion } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,18 +23,30 @@ interface ProjectCardProps {
 
 export function ProjectCard({ project, onClick, isArchived, onArchiveToggle, onDelete }: ProjectCardProps) {
   return (
-    <div
+    <motion.div
       onClick={onClick}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ scale: 1.02, y: -4 }}
+      whileTap={{ scale: 0.98 }}
+      transition={{ duration: 0.3 }}
       className={cn(
-        "glass-card-hover p-6 cursor-pointer group",
+        "glass-card-hover p-6 cursor-pointer group relative overflow-hidden",
         isArchived && "opacity-60"
       )}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center group-hover:from-primary/30 group-hover:to-secondary/30 transition-all">
-          <BookOpen className="w-6 h-6 text-primary" />
-        </div>
+        <motion.div 
+          className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center group-hover:from-primary/30 group-hover:to-secondary/30 transition-all glow-primary relative"
+          whileHover={{ rotate: 360 }}
+          transition={{ duration: 0.6 }}
+        >
+          <BookOpen className="w-6 h-6 text-primary drop-shadow-lg" />
+          {project.progress >= 100 && (
+            <Sparkles className="w-3 h-3 absolute -top-1 -right-1 text-primary animate-pulse" />
+          )}
+        </motion.div>
         <div className="flex items-center gap-2">
           {isArchived && (
             <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded-full">
@@ -92,18 +105,24 @@ export function ProjectCard({ project, onClick, isArchived, onArchiveToggle, onD
       </div>
 
       {/* Title & Author */}
-      <h3 className="font-display text-xl font-semibold mb-1 text-foreground group-hover:gradient-text transition-all">
+      <motion.h3 
+        className="font-display text-xl font-semibold mb-1 text-foreground group-hover:gradient-text transition-all"
+        whileHover={{ scale: 1.02 }}
+      >
         {project.title}
-      </h3>
+      </motion.h3>
       <p className="text-sm text-muted-foreground mb-4">
         by {project.author}
       </p>
 
       {/* Genre & Chapters */}
       <div className="flex items-center gap-4 text-xs text-muted-foreground mb-4">
-        <span className="inline-flex items-center gap-1.5 bg-secondary/10 text-secondary px-2 py-1 rounded-full">
+        <motion.span 
+          className="inline-flex items-center gap-1.5 bg-secondary/10 text-secondary px-2 py-1 rounded-full shadow-sm hover:shadow-md hover:bg-secondary/20 transition-all"
+          whileHover={{ scale: 1.05 }}
+        >
           {project.genre}
-        </span>
+        </motion.span>
         <span>{project.seriesLength} chapters</span>
       </div>
 
@@ -111,7 +130,15 @@ export function ProjectCard({ project, onClick, isArchived, onArchiveToggle, onD
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground">Progress</span>
-          <span className="font-medium text-primary">{Number(project.progress || 0).toFixed(1)}%</span>
+          <motion.span 
+            className="font-medium text-primary"
+            animate={{ 
+              scale: project.progress >= 100 ? [1, 1.1, 1] : 1
+            }}
+            transition={{ duration: 2, repeat: project.progress >= 100 ? Infinity : 0 }}
+          >
+            {Number(project.progress || 0).toFixed(1)}%
+          </motion.span>
         </div>
         <Progress value={project.progress} className="h-2 bg-muted" />
       </div>
@@ -123,6 +150,9 @@ export function ProjectCard({ project, onClick, isArchived, onArchiveToggle, onD
           <span>Updated {formatDistanceToNow(project.updatedAt, { addSuffix: true })}</span>
         </div>
       </div>
-    </div>
+      
+      {/* Shimmer effect on hover */}
+      <div className="absolute inset-0 shimmer opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity" />
+    </motion.div>
   );
 }

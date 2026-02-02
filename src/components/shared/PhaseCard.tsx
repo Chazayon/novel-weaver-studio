@@ -1,7 +1,8 @@
 import { cn } from '@/lib/utils';
 import { Phase } from '@/lib/mockData';
-import { CheckCircle2, Circle, Loader2, Clock, FileOutput } from 'lucide-react';
+import { CheckCircle2, Circle, Loader2, Clock, FileOutput, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { motion } from 'framer-motion';
 
 interface PhaseCardProps {
   phase: Phase;
@@ -32,28 +33,40 @@ export function PhaseCard({ phase, isActive, onClick }: PhaseCardProps) {
   const StatusIcon = config.icon;
 
   return (
-    <div
+    <motion.div
       onClick={onClick}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
       className={cn(
-        "glass-card-hover p-5 cursor-pointer",
-        isActive && "border-primary/50 shadow-lg shadow-primary/10"
+        "glass-card-hover p-5 cursor-pointer relative overflow-hidden",
+        isActive && "border-primary/50 shadow-lg shadow-primary/20 glow-primary"
       )}
     >
       <div className="flex items-start gap-4">
         {/* Status Icon */}
-        <div className={cn(
-          "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
-          phase.status === 'completed' && "bg-emerald-500/20",
-          phase.status === 'in-progress' && "bg-primary/20",
-          phase.status === 'not-started' && "bg-muted"
-        )}>
+        <motion.div 
+          className={cn(
+            "w-10 h-10 rounded-full flex items-center justify-center shrink-0 relative",
+            phase.status === 'completed' && "bg-emerald-500/20 glow-success",
+            phase.status === 'in-progress' && "bg-primary/20 glow-primary",
+            phase.status === 'not-started' && "bg-muted"
+          )}
+          whileHover={{ scale: 1.1, rotate: phase.status === 'in-progress' ? 360 : 0 }}
+          transition={{ duration: 0.3 }}
+        >
           <StatusIcon className={cn(
             "w-5 h-5",
-            phase.status === 'completed' && "text-emerald-400",
-            phase.status === 'in-progress' && "text-primary animate-spin",
+            phase.status === 'completed' && "icon-success drop-shadow-lg",
+            phase.status === 'in-progress' && "icon-primary animate-spin",
             phase.status === 'not-started' && "text-muted-foreground"
           )} />
-        </div>
+          {phase.status === 'completed' && (
+            <Sparkles className="w-3 h-3 absolute -top-1 -right-1 text-emerald-400 animate-pulse" />
+          )}
+        </motion.div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
@@ -82,6 +95,11 @@ export function PhaseCard({ phase, isActive, onClick }: PhaseCardProps) {
           </div>
         </div>
       </div>
-    </div>
+      
+      {/* Shimmer effect on hover */}
+      {isActive && (
+        <div className="absolute inset-0 shimmer pointer-events-none" />
+      )}
+    </motion.div>
   );
 }

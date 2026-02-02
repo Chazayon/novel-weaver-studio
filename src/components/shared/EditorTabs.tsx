@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Copy, Save, ArrowLeftRight, Check, Edit2, Download, Loader2, FileText } from 'lucide-react';
@@ -259,22 +260,34 @@ export function EditorTabs({
 
   const renderPrimaryAction = (size: 'sm' | 'lg') => {
     if (!nextAction || isEditing) return null;
+    const shouldAnimate = !isGenerating && nextAction.variant === 'default';
     return (
-      <Button
-        size={size}
-        onClick={nextAction.action}
-        disabled={isGenerating}
-        variant={nextAction.variant}
+      <motion.div
+        animate={shouldAnimate ? {
+          boxShadow: [
+            '0 0 20px hsl(var(--primary) / 0.3)',
+            '0 0 35px hsl(var(--primary) / 0.5)',
+            '0 0 20px hsl(var(--primary) / 0.3)'
+          ]
+        } : {}}
+        transition={{ duration: 2, repeat: Infinity }}
       >
-        {isGenerating ? (
-          <>
-            <Loader2 className={size === 'lg' ? 'w-4 h-4 mr-2 animate-spin' : 'w-4 h-4 mr-2 animate-spin'} />
-            {nextAction.label.startsWith('Generate') ? 'Generating...' : 'Working...'}
-          </>
-        ) : (
-          nextAction.label
-        )}
-      </Button>
+        <Button
+          size={size}
+          onClick={nextAction.action}
+          disabled={isGenerating}
+          variant={nextAction.variant === 'default' ? 'glow' : nextAction.variant}
+        >
+          {isGenerating ? (
+            <>
+              <Loader2 className={size === 'lg' ? 'w-4 h-4 mr-2 animate-spin' : 'w-4 h-4 mr-2 animate-spin'} />
+              {nextAction.label.startsWith('Generate') ? 'Generating...' : 'Working...'}
+            </>
+          ) : (
+            nextAction.label
+          )}
+        </Button>
+      </motion.div>
     );
   };
 
@@ -288,11 +301,17 @@ export function EditorTabs({
               <TabsTrigger
                 key={tab.id}
                 value={tab.id}
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground relative px-4 py-2"
+                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:glow-primary relative px-4 py-2"
               >
                 {tab.label}
                 {approvedTabs.has(tab.id) && (
-                  <Check className="w-3 h-3 text-status-success absolute -top-1 -right-1" />
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="absolute -top-1 -right-1"
+                  >
+                    <Check className="w-3 h-3 text-status-success drop-shadow-lg" />
+                  </motion.div>
                 )}
               </TabsTrigger>
             ))}
