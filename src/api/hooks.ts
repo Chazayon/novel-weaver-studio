@@ -11,6 +11,11 @@ import {
     PendingInput,
     SystemStats,
     ProjectLLMSettingsUpdate,
+    ProjectImportCreateRequest,
+    ProjectImportRequest,
+    ResumeSuggestion,
+    GenerateStyleSheetRequest,
+    GenerateStyleSheetResponse,
 } from './types';
 
 // ============================================================================
@@ -22,6 +27,7 @@ export const queryKeys = {
     project: (id: string) => ['projects', id] as const,
     projectProgress: (id: string) => ['projects', id, 'progress'] as const,
     projectLlmSettings: (id: string) => ['projects', id, 'settings', 'llm'] as const,
+    resumeSuggestion: (id: string) => ['projects', id, 'resume-suggestion'] as const,
     phaseStatus: (projectId: string, phase: number, workflowId?: string) =>
         ['projects', projectId, 'phases', phase, 'status', workflowId] as const,
     chapters: (projectId: string) => ['projects', projectId, 'chapters'] as const,
@@ -42,6 +48,55 @@ export function useProjects() {
         queryKey: queryKeys.projects,
         queryFn: () => apiClient.listProjects(),
         staleTime: 30000, // 30 seconds
+    });
+}
+
+export function useCreateProjectFromImport() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: (data: ProjectImportCreateRequest) => apiClient.createProjectFromImport(data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+        },
+    });
+}
+
+export function useImportIntoProject(projectId: string | undefined) {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: (payload: ProjectImportRequest) => apiClient.importIntoProject(projectId!, payload),
+        onSuccess: (_, __) => {
+            if (!projectId) return;
+            queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+            queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId) });
+            queryClient.invalidateQueries({ queryKey: queryKeys.projectProgress(projectId) });
+            queryClient.invalidateQueries({ queryKey: queryKeys.resumeSuggestion(projectId) });
+        },
+    });
+}
+
+export function useResumeSuggestion(projectId: string | undefined) {
+    return useQuery({
+        queryKey: queryKeys.resumeSuggestion(projectId!),
+        queryFn: () => apiClient.getResumeSuggestion(projectId!),
+        enabled: !!projectId,
+        staleTime: 10000,
+    });
+}
+
+export function useGenerateStyleSheetFromChapters(projectId: string | undefined) {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: (payload: GenerateStyleSheetRequest) =>
+            apiClient.generateStyleSheetFromChapters(projectId!, payload),
+        onSuccess: () => {
+            if (!projectId) return;
+            queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId) });
+            queryClient.invalidateQueries({ queryKey: queryKeys.projectProgress(projectId) });
+        },
     });
 }
 

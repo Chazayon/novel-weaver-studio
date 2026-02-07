@@ -50,6 +50,29 @@ import {
 } from '@/api/hooks';
 import type { ChapterDetail } from '@/api/types';
 import { apiClient } from '@/api/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { WorkflowReviewDialog } from '@/components/workflow/WorkflowReviewDialog';
 import { ArtifactViewDialog } from '@/components/workflow/ArtifactViewDialog';
 import { PhaseConfirmDialog } from '@/components/workflow/PhaseConfirmDialog';
@@ -62,7 +85,34 @@ import { WorkflowContextPanel } from '@/components/workflow/WorkflowContextPanel
 import { WorkflowPhaseHeader } from '@/components/workflow/WorkflowPhaseHeader';
 import { WorkflowRecentArtifactsGrid } from '@/components/workflow/WorkflowRecentArtifactsGrid';
 import { WorkflowPhaseCard } from '@/components/workflow/WorkflowPhaseCard';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, Upload } from 'lucide-react';
+
+type ImportIntoDataState = {
+  genreTropes: string;
+  styleSheet: string;
+  contextBundle: string;
+  seriesOutline: string;
+  callSheet: string;
+  characters: string;
+  worldbuilding: string;
+  storyBible: string;
+  outline: string;
+  overwrite: boolean;
+  ensureContextBundle: boolean;
+  generateOutlineFromChapters: boolean;
+};
+
+type ImportIntoResearchFieldKey = Exclude<
+  keyof ImportIntoDataState,
+  'overwrite' | 'ensureContextBundle' | 'generateOutlineFromChapters'
+>;
+
+type ImportChapterState = {
+  number: number;
+  title: string;
+  kind: 'final' | 'draft';
+  content: string;
+};
 
 const PHASE1_INPUTS_KEY_PREFIX = 'novel-weaver:phase1-inputs';
 
@@ -77,9 +127,9 @@ export default function WorkflowCockpit() {
 
   // Fetch project data
   const { data: progressData, refetch: refetchProgress } = useProjectProgress(projectId);
-  const { data: artifactsData } = useArtifacts(projectId);
+  const { data: artifactsData, refetch: refetchArtifacts } = useArtifacts(projectId);
   const { data: pendingInputs, refetch: refetchPendingInputs } = usePendingInputs(projectId, { refetchInterval: 5000 });
-  const { data: chaptersData } = useChapters(projectId);
+  const { data: chaptersData, refetch: refetchChapters } = useChapters(projectId);
   const executePhase = useExecutePhase();
   const cancelWorkflow = useCancelWorkflow();
 
@@ -101,6 +151,131 @@ export default function WorkflowCockpit() {
   const [reviewContent, setReviewContent] = useState<string>('');
   const [reviewDescription, setReviewDescription] = useState<string>('');
   const [reviewExpectedOutputs, setReviewExpectedOutputs] = useState<string[]>([]);
+
+  const [isImportIntoOpen, setIsImportIntoOpen] = useState(false);
+  const [isImportIntoPending, setIsImportIntoPending] = useState(false);
+
+  const [importIntoData, setImportIntoData] = useState<ImportIntoDataState>({
+    genreTropes: '',
+    styleSheet: '',
+    contextBundle: '',
+    seriesOutline: '',
+    callSheet: '',
+    characters: '',
+    worldbuilding: '',
+    storyBible: '',
+    outline: '',
+    overwrite: false,
+    ensureContextBundle: true,
+    generateOutlineFromChapters: true,
+  });
+
+  const [importIntoChapters, setImportIntoChapters] = useState<ImportChapterState[]>([]);
+  const [generateStyleSheetFromImported, setGenerateStyleSheetFromImported] = useState(false);
+  const [overwriteGeneratedStyleSheet, setOverwriteGeneratedStyleSheet] = useState(false);
+  const [styleSheetMaxChars, setStyleSheetMaxChars] = useState(60000);
+
+  const readTextFile = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+
+  const applyFileToField = async (file: File | undefined, setter: (value: string) => void) => {
+    if (!file) return;
+    try {
+      const text = await readTextFile(file);
+      setter(text);
+    } catch (e) {
+      toast({
+        title: 'Error',
+        description: e instanceof Error ? e.message : 'Failed to read file',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleImportIntoProject = async () => {
+    if (!projectId) {
+      toast({ title: 'Error', description: 'No project selected', variant: 'destructive' });
+      return;
+    }
+
+    setIsImportIntoPending(true);
+    try {
+      const chapters = importIntoChapters
+        .filter((c) => Number.isFinite(c.number) && c.number > 0 && c.content.trim())
+        .map((c) => ({
+          number: c.number,
+          title: c.title?.trim() ? c.title.trim() : undefined,
+          kind: c.kind,
+          content: c.content,
+        }));
+
+      await apiClient.importIntoProject(projectId, {
+        genreTropes: importIntoData.genreTropes.trim() ? importIntoData.genreTropes : undefined,
+        styleSheet: importIntoData.styleSheet.trim() ? importIntoData.styleSheet : undefined,
+        contextBundle: importIntoData.contextBundle.trim() ? importIntoData.contextBundle : undefined,
+        seriesOutline: importIntoData.seriesOutline.trim() ? importIntoData.seriesOutline : undefined,
+        callSheet: importIntoData.callSheet.trim() ? importIntoData.callSheet : undefined,
+        characters: importIntoData.characters.trim() ? importIntoData.characters : undefined,
+        worldbuilding: importIntoData.worldbuilding.trim() ? importIntoData.worldbuilding : undefined,
+        storyBible: importIntoData.storyBible.trim() ? importIntoData.storyBible : undefined,
+        outline: importIntoData.outline.trim() ? importIntoData.outline : undefined,
+        chapters,
+        overwrite: importIntoData.overwrite,
+        ensureContextBundle: importIntoData.ensureContextBundle,
+        generateOutlineFromChapters: importIntoData.generateOutlineFromChapters,
+      });
+
+      if (generateStyleSheetFromImported && chapters.length > 0) {
+        const chapterNumbers = chapters.map((c) => c.number).sort((a, b) => a - b);
+        await apiClient.generateStyleSheetFromChapters(projectId, {
+          overwrite: overwriteGeneratedStyleSheet,
+          maxChars: styleSheetMaxChars,
+          chapterNumbers,
+        });
+      }
+
+      setIsImportIntoOpen(false);
+      setImportIntoData({
+        genreTropes: '',
+        styleSheet: '',
+        contextBundle: '',
+        seriesOutline: '',
+        callSheet: '',
+        characters: '',
+        worldbuilding: '',
+        storyBible: '',
+        outline: '',
+        overwrite: false,
+        ensureContextBundle: true,
+        generateOutlineFromChapters: true,
+      });
+      setImportIntoChapters([]);
+      setGenerateStyleSheetFromImported(false);
+      setOverwriteGeneratedStyleSheet(false);
+      setStyleSheetMaxChars(60000);
+
+      toast({ title: 'Import completed', description: 'Your project has been updated.' });
+
+      await refetchProgress();
+      void refetchArtifacts();
+      void refetchChapters();
+      void refetchPendingInputs();
+    } catch (e) {
+      toast({
+        title: 'Error',
+        description: e instanceof Error ? e.message : 'Failed to import into project',
+        variant: 'destructive',
+        duration: 8000,
+      });
+    } finally {
+      setIsImportIntoPending(false);
+    }
+  };
 
   const lastHandledPendingRef = useRef<{ workflowId: string; phase: number } | null>(null);
   const [phase1FormData, setPhase1FormData] = useState({
@@ -973,7 +1148,289 @@ export default function WorkflowCockpit() {
         {/* Main content */}
         <div className="flex-1 p-4 md:p-6 lg:p-8 min-h-0 overflow-y-auto">
           {/* Current phase header */}
-          <WorkflowPhaseHeader phaseId={activePhase.id} phaseName={activePhase.name} description={activePhase.description} />
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <WorkflowPhaseHeader phaseId={activePhase.id} phaseName={activePhase.name} description={activePhase.description} />
+            </div>
+            <Dialog open={isImportIntoOpen} onOpenChange={setIsImportIntoOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="shrink-0">
+                  <Upload className="w-4 h-4" />
+                  Import Into Project
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-3xl bg-card border-border">
+                <DialogHeader>
+                  <DialogTitle className="font-display text-2xl">Import Into This Project</DialogTitle>
+                  <DialogDescription>
+                    Add any existing materials (research, outline, chapters). This updates your current project.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <Tabs defaultValue="research" className="w-full">
+                  <TabsList className="w-full justify-start">
+                    <TabsTrigger value="research">Research</TabsTrigger>
+                    <TabsTrigger value="chapters">Chapters</TabsTrigger>
+                    <TabsTrigger value="advanced">Advanced</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="research">
+                    <ScrollArea className="h-[420px] pr-3">
+                      <div className="space-y-6 py-4">
+                        {(
+                          [
+                            { key: 'genreTropes', label: 'Genre Tropes', accept: '.md,.txt' },
+                            { key: 'styleSheet', label: 'Style Sheet', accept: '.md,.txt' },
+                            { key: 'contextBundle', label: 'Context Bundle', accept: '.md,.txt' },
+                            { key: 'seriesOutline', label: 'Series Outline', accept: '.md,.txt' },
+                            { key: 'callSheet', label: 'Call Sheet', accept: '.md,.txt' },
+                            { key: 'characters', label: 'Characters', accept: '.md,.txt' },
+                            { key: 'worldbuilding', label: 'Worldbuilding', accept: '.md,.txt' },
+                            { key: 'storyBible', label: 'Story Bible', accept: '.md,.txt' },
+                            { key: 'outline', label: 'Outline', accept: '.md,.txt' },
+                          ] as const satisfies ReadonlyArray<{
+                            key: ImportIntoResearchFieldKey;
+                            label: string;
+                            accept: string;
+                          }>
+                        ).map((field) => (
+                          <div key={field.key} className="space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <Label>{field.label}</Label>
+                              <Input
+                                type="file"
+                                accept={field.accept}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  applyFileToField(file, (value) =>
+                                    setImportIntoData((prev) => ({ ...prev, [field.key]: value }))
+                                  );
+                                }}
+                                className="max-w-[260px] bg-muted/50 border-border"
+                              />
+                            </div>
+                            <Textarea
+                              value={importIntoData[field.key]}
+                              onChange={(e) =>
+                                setImportIntoData((prev) => ({ ...prev, [field.key]: e.target.value }))
+                              }
+                              placeholder={`Paste ${field.label} here (optional)`}
+                              className="bg-muted/50 border-border min-h-[120px]"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+
+                  <TabsContent value="chapters">
+                    <div className="flex items-center justify-between py-4">
+                      <div className="text-sm text-muted-foreground">
+                        Import any already-written chapters as drafts or finals.
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={() =>
+                          setImportIntoChapters((prev) => [
+                            ...prev,
+                            { number: prev.length + 1, title: '', kind: 'final', content: '' },
+                          ])
+                        }
+                      >
+                        <Upload className="w-4 h-4" />
+                        Add Chapter
+                      </Button>
+                    </div>
+
+                    <ScrollArea className="h-[420px] pr-3">
+                      <div className="space-y-6 pb-4">
+                        {importIntoChapters.length === 0 && (
+                          <div className="text-sm text-muted-foreground py-6">No chapters added yet.</div>
+                        )}
+
+                        {importIntoChapters.map((ch, idx) => (
+                          <div key={idx} className="rounded-lg border border-border p-4 space-y-3">
+                            <div className="grid gap-3 md:grid-cols-4">
+                              <div className="space-y-2">
+                                <Label>Number</Label>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  value={ch.number}
+                                  onChange={(e) => {
+                                    const num = parseInt(e.target.value) || 1;
+                                    setImportIntoChapters((prev) =>
+                                      prev.map((c, i) => (i === idx ? { ...c, number: num } : c))
+                                    );
+                                  }}
+                                  className="bg-muted/50 border-border"
+                                />
+                              </div>
+                              <div className="space-y-2 md:col-span-2">
+                                <Label>Title (optional)</Label>
+                                <Input
+                                  value={ch.title}
+                                  onChange={(e) =>
+                                    setImportIntoChapters((prev) =>
+                                      prev.map((c, i) => (i === idx ? { ...c, title: e.target.value } : c))
+                                    )
+                                  }
+                                  className="bg-muted/50 border-border"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Kind</Label>
+                                <Select
+                                  value={ch.kind}
+                                  onValueChange={(value) => {
+                                    const kind = value === 'draft' ? 'draft' : 'final';
+                                    setImportIntoChapters((prev) =>
+                                      prev.map((c, i) => (i === idx ? { ...c, kind } : c))
+                                    );
+                                  }}
+                                >
+                                  <SelectTrigger className="bg-muted/50 border-border">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-card border-border">
+                                    <SelectItem value="final">Final</SelectItem>
+                                    <SelectItem value="draft">Draft</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3">
+                              <Label>Content</Label>
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="file"
+                                  accept=".md,.txt"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    applyFileToField(file, (value) =>
+                                      setImportIntoChapters((prev) =>
+                                        prev.map((c, i) => (i === idx ? { ...c, content: value } : c))
+                                      )
+                                    );
+                                  }}
+                                  className="max-w-[260px] bg-muted/50 border-border"
+                                />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    setImportIntoChapters((prev) => prev.filter((_, i) => i !== idx))
+                                  }
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            </div>
+
+                            <Textarea
+                              value={ch.content}
+                              onChange={(e) =>
+                                setImportIntoChapters((prev) =>
+                                  prev.map((c, i) => (i === idx ? { ...c, content: e.target.value } : c))
+                                )
+                              }
+                              placeholder="Paste chapter text here"
+                              className="bg-muted/50 border-border min-h-[160px]"
+                            />
+                          </div>
+                        ))}
+
+                        <div className="rounded-lg border border-border p-4 space-y-3">
+                          <div className="flex items-start gap-3">
+                            <Checkbox
+                              checked={generateStyleSheetFromImported}
+                              onCheckedChange={(v) => setGenerateStyleSheetFromImported(Boolean(v))}
+                              disabled={importIntoChapters.length === 0}
+                            />
+                            <div className="space-y-1">
+                              <div className="text-sm font-medium">Generate style sheet from imported chapters</div>
+                              <div className="text-xs text-muted-foreground">
+                                Uses your existing writing to keep voice consistent for new chapters.
+                              </div>
+                            </div>
+                          </div>
+
+                          {generateStyleSheetFromImported && (
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="space-y-2">
+                                <Label>Max characters sampled</Label>
+                                <Input
+                                  type="number"
+                                  min={5000}
+                                  max={200000}
+                                  value={styleSheetMaxChars}
+                                  onChange={(e) => setStyleSheetMaxChars(parseInt(e.target.value) || 60000)}
+                                  className="bg-muted/50 border-border"
+                                />
+                              </div>
+                              <div className="flex items-center gap-3 pt-7">
+                                <Checkbox
+                                  checked={overwriteGeneratedStyleSheet}
+                                  onCheckedChange={(v) => setOverwriteGeneratedStyleSheet(Boolean(v))}
+                                />
+                                <Label>Overwrite existing style sheet</Label>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+
+                  <TabsContent value="advanced">
+                    <div className="space-y-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <Checkbox
+                          checked={importIntoData.overwrite}
+                          onCheckedChange={(v) => setImportIntoData((prev) => ({ ...prev, overwrite: Boolean(v) }))}
+                        />
+                        <Label>Overwrite existing artifacts if they already exist</Label>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Checkbox
+                          checked={importIntoData.ensureContextBundle}
+                          onCheckedChange={(v) =>
+                            setImportIntoData((prev) => ({ ...prev, ensureContextBundle: Boolean(v) }))
+                          }
+                        />
+                        <Label>Ensure a context bundle exists (recommended)</Label>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Checkbox
+                          checked={importIntoData.generateOutlineFromChapters}
+                          onCheckedChange={(v) =>
+                            setImportIntoData((prev) => ({ ...prev, generateOutlineFromChapters: Boolean(v) }))
+                          }
+                        />
+                        <Label>Generate a basic outline from imported chapters if no outline is provided</Label>
+                      </div>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsImportIntoOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleImportIntoProject}
+                    disabled={!projectId || isImportIntoPending}
+                    variant="glow"
+                    className="glow-primary-strong"
+                  >
+                    {isImportIntoPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Import
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
 
           {/* Phase card */}
           <WorkflowPhaseCard

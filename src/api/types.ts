@@ -20,6 +20,61 @@ export interface ProjectResponse {
     progress: number;
 }
 
+export type ImportChapterKind = 'final' | 'draft';
+
+export interface ImportChapter {
+    number: number;
+    title?: string;
+    content: string;
+    kind?: ImportChapterKind;
+}
+
+export interface ImportArtifact {
+    path: string;
+    content: string;
+}
+
+export interface ProjectImportRequest {
+    genreTropes?: string;
+    styleSheet?: string;
+    contextBundle?: string;
+    seriesOutline?: string;
+    callSheet?: string;
+    characters?: string;
+    worldbuilding?: string;
+    storyBible?: string;
+    outline?: string;
+    chapters?: ImportChapter[];
+    artifacts?: ImportArtifact[];
+    overwrite?: boolean;
+    ensureContextBundle?: boolean;
+    generateOutlineFromChapters?: boolean;
+    metadataPatch?: Record<string, unknown>;
+}
+
+export interface ProjectImportCreateRequest {
+    metadata: ProjectCreate;
+    import: ProjectImportRequest;
+}
+
+export interface ResumeSuggestion {
+    nextChapterNumber?: number;
+    nextChapterTitle?: string;
+    chaptersCompleted: number;
+    totalChapters: number;
+}
+
+export interface GenerateStyleSheetRequest {
+    overwrite?: boolean;
+    maxChars?: number;
+    chapterNumbers?: number[];
+}
+
+export interface GenerateStyleSheetResponse {
+    success: boolean;
+    styleSheet: string;
+}
+
 export interface PhaseExecuteRequest {
     phase: number;
     inputs: Record<string, unknown>;
@@ -152,6 +207,11 @@ export interface HealthResponse {
 export type CreateProjectRequest = ProjectCreate;
 export type ListProjectsResponse = ProjectResponse[];
 export type GetProjectResponse = ProjectResponse;
+export type CreateProjectFromImportRequest = ProjectImportCreateRequest;
+export type ImportIntoProjectRequest = ProjectImportRequest;
+export type GetResumeSuggestionResponse = ResumeSuggestion;
+export type GenerateStyleSheetFromChaptersRequest = GenerateStyleSheetRequest;
+export type GenerateStyleSheetFromChaptersResponse = GenerateStyleSheetResponse;
 
 // Workflow Execution
 export type ExecutePhaseRequest = PhaseExecuteRequest;

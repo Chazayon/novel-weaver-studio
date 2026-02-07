@@ -47,6 +47,15 @@ class ProjectResponse(BaseModel):
         populate_by_name = True
 
 
+class GenerateStyleSheetRequest(BaseModel):
+    overwrite: bool = False
+    max_chars: int = Field(default=60000, alias="maxChars")
+    chapter_numbers: Optional[List[int]] = Field(default=None, alias="chapterNumbers")
+
+    class Config:
+        populate_by_name = True
+
+
 class ArtifactInfo(BaseModel):
     """Information about a project artifact."""
     path: str
@@ -205,5 +214,66 @@ class SystemStats(BaseModel):
     total_storage_mb: float = Field(alias="totalStorageMb")
     uptime_seconds: int = Field(alias="uptimeSeconds")
     
+    class Config:
+        populate_by_name = True
+
+
+class ImportChapterKind(str, Enum):
+    FINAL = "final"
+    DRAFT = "draft"
+
+
+class ImportChapter(BaseModel):
+    number: int
+    title: Optional[str] = None
+    content: str
+    kind: ImportChapterKind = ImportChapterKind.FINAL
+
+
+class ImportArtifact(BaseModel):
+    path: str
+    content: str
+
+
+class ProjectImportRequest(BaseModel):
+    genre_tropes: Optional[str] = Field(default=None, alias="genreTropes")
+    style_sheet: Optional[str] = Field(default=None, alias="styleSheet")
+    context_bundle: Optional[str] = Field(default=None, alias="contextBundle")
+    series_outline: Optional[str] = Field(default=None, alias="seriesOutline")
+    call_sheet: Optional[str] = Field(default=None, alias="callSheet")
+    characters: Optional[str] = None
+    worldbuilding: Optional[str] = None
+    story_bible: Optional[str] = Field(default=None, alias="storyBible")
+    outline: Optional[str] = None
+
+    chapters: List[ImportChapter] = Field(default_factory=list)
+    artifacts: List[ImportArtifact] = Field(default_factory=list)
+
+    overwrite: bool = False
+    ensure_context_bundle: bool = Field(default=True, alias="ensureContextBundle")
+    generate_outline_from_chapters: bool = Field(
+        default=True, alias="generateOutlineFromChapters"
+    )
+
+    metadata_patch: Optional[Dict[str, Any]] = Field(default=None, alias="metadataPatch")
+
+    class Config:
+        populate_by_name = True
+
+
+class ProjectImportCreateRequest(BaseModel):
+    metadata: ProjectCreate
+    import_data: ProjectImportRequest = Field(alias="import")
+
+    class Config:
+        populate_by_name = True
+
+
+class ResumeSuggestion(BaseModel):
+    next_chapter_number: Optional[int] = Field(default=None, alias="nextChapterNumber")
+    next_chapter_title: Optional[str] = Field(default=None, alias="nextChapterTitle")
+    chapters_completed: int = Field(alias="chaptersCompleted")
+    total_chapters: int = Field(alias="totalChapters")
+
     class Config:
         populate_by_name = True

@@ -10,7 +10,11 @@ from fastapi.responses import JSONResponse
 
 from ..models import (
     ProjectCreate,
+    GenerateStyleSheetRequest,
+    ProjectImportCreateRequest,
+    ProjectImportRequest,
     ProjectResponse,
+    ResumeSuggestion,
     ArtifactInfo,
     ArtifactUpdateRequest,
     PhaseExecuteRequest,
@@ -31,6 +35,242 @@ from ..models import (
 from ..vault import storage_manager, novel_vault
 
 router = APIRouter(prefix="/api", tags=["api"])
+
+
+def _sanitize_relative_artifact_path(path: str) -> str:
+    raw = (path or "").strip()
+    if not raw:
+        raise ValueError("Artifact path cannot be empty")
+    if raw.startswith("/") or raw.startswith("\\"):
+        raise ValueError("Artifact path must be relative")
+
+    safe = raw.replace("\\", "/")
+    parts = [p for p in safe.split("/") if p not in {"", "."}]
+    if any(p == ".." for p in parts):
+        raise ValueError("Artifact path cannot contain '..'")
+    if not parts:
+        raise ValueError("Artifact path cannot be empty")
+
+    if parts[-1] == "project.json":
+        raise ValueError("Refusing to write project.json via artifact import")
+
+    return "/".join(parts)
+
+
+def _artifact_file_exists(project_id: str, artifact_path: str) -> bool:
+    project_path = storage_manager.get_project_path(project_id)
+    file_path = project_path / artifact_path
+    return file_path.exists() and file_path.is_file()
+
+
+def _build_minimal_context_bundle(manifest: dict, import_data: ProjectImportRequest) -> str:
+    metadata = manifest.get("metadata", {}) if isinstance(manifest, dict) else {}
+    title = str(metadata.get("title", "Untitled") or "Untitled")
+    author = str(metadata.get("author", "Unknown") or "Unknown")
+    genre = str(metadata.get("genre", "") or "")
+
+    lines: list[str] = [
+        "# CONTEXT_BUNDLE",
+        "",
+        f"## PROJECT",
+        f"- Title: {title}",
+        f"- Author: {author}",
+    ]
+    if genre.strip():
+        lines.append(f"- Genre: {genre}")
+
+    sections: list[tuple[str, str | None]] = [
+        ("GENRE_TROPES", import_data.genre_tropes),
+        ("STYLE_SHEET", import_data.style_sheet),
+        ("SERIES_OUTLINE", import_data.series_outline),
+        ("CALL_SHEET", import_data.call_sheet),
+        ("CHARACTERS", import_data.characters),
+        ("WORLDBUILDING", import_data.worldbuilding),
+        ("STORY_BIBLE", import_data.story_bible),
+        ("OUTLINE", import_data.outline),
+    ]
+
+    for header, content in sections:
+        if content and str(content).strip():
+            lines.extend(["", f"## {header}", "", str(content).strip()])
+
+    chapter_blocks: list[str] = []
+    for ch in import_data.chapters:
+        if not ch or not ch.content.strip():
+            continue
+        label = f"Chapter {ch.number}" + (f": {ch.title}" if ch.title else "")
+        chapter_blocks.append(f"### {label}\n\n{ch.content.strip()}\n")
+
+    if chapter_blocks:
+        lines.extend(["", "## DRAFTING_PROGRESS", ""])
+        lines.extend(chapter_blocks)
+
+    return ("\n".join(lines).rstrip() + "\n")
+
+
+def _maybe_write_artifact(project_id: str, artifact_path: str, content: str, overwrite: bool) -> None:
+    safe_path = _sanitize_relative_artifact_path(artifact_path)
+    if _artifact_file_exists(project_id, safe_path) and not overwrite:
+        raise ValueError(f"Artifact already exists: {safe_path}")
+    novel_vault.novel_write_text(project_id, safe_path, content)
+
+
+def _read_first_existing_artifact(project_id: str, paths: list[str]) -> str | None:
+    for p in paths:
+        try:
+            return novel_vault.novel_read_text(project_id, p).get("text")
+        except Exception:
+            continue
+    return None
+
+
+def _upsert_context_bundle_section(bundle: str, header: str, content: str) -> str:
+    import re
+
+    header_text = str(header or "").strip()
+    if not header_text:
+        return bundle
+    new_content = (content or "").strip()
+    if not new_content:
+        return bundle
+
+    b = (bundle or "").rstrip() + "\n"
+    h2 = f"## {header_text}"
+
+    m = re.search(rf"(^##\s+{re.escape(header_text)}\s*$)", b, flags=re.MULTILINE)
+    if not m:
+        return (b.rstrip() + f"\n\n{h2}\n\n{new_content}\n").rstrip() + "\n"
+
+    section_start = m.start(1)
+    after_header = m.end(1)
+    next_h2 = re.search(r"^##\s+", b[after_header:], flags=re.MULTILINE)
+    section_end = after_header + next_h2.start(0) if next_h2 else len(b)
+
+    updated = (
+        b[:section_start].rstrip()
+        + f"\n\n{h2}\n\n{new_content}\n\n"
+        + b[section_end:].lstrip()
+    )
+    return updated.rstrip() + "\n"
+
+
+def _apply_project_import(project_id: str, import_data: ProjectImportRequest) -> dict:
+    manifest = storage_manager.get_project_manifest(project_id)
+
+    if import_data.metadata_patch and isinstance(import_data.metadata_patch, dict):
+        novel_vault.novel_update_manifest(project_id, {"metadata": import_data.metadata_patch})
+        manifest = storage_manager.get_project_manifest(project_id)
+
+    overwrite = bool(import_data.overwrite)
+
+    if import_data.genre_tropes is not None:
+        _maybe_write_artifact(project_id, "phase1_outputs/genre_tropes.md", import_data.genre_tropes, overwrite)
+    if import_data.style_sheet is not None:
+        _maybe_write_artifact(project_id, "phase1_outputs/style_sheet.md", import_data.style_sheet, overwrite)
+    if import_data.series_outline is not None:
+        _maybe_write_artifact(project_id, "phase2_outputs/series_outline.md", import_data.series_outline, overwrite)
+    if import_data.call_sheet is not None:
+        _maybe_write_artifact(project_id, "phase3_outputs/call_sheet.md", import_data.call_sheet, overwrite)
+    if import_data.characters is not None:
+        _maybe_write_artifact(project_id, "phase4_outputs/characters.md", import_data.characters, overwrite)
+    if import_data.worldbuilding is not None:
+        _maybe_write_artifact(project_id, "phase4_outputs/worldbuilding.md", import_data.worldbuilding, overwrite)
+    if import_data.story_bible is not None:
+        _maybe_write_artifact(project_id, "phase5_outputs/story_bible.md", import_data.story_bible, overwrite)
+
+    outline_written = False
+    if import_data.outline is not None:
+        _maybe_write_artifact(project_id, "phase6_outputs/outline.md", import_data.outline, overwrite)
+        outline_written = True
+
+    for art in import_data.artifacts:
+        _maybe_write_artifact(project_id, art.path, art.content, overwrite)
+
+    imported_chapter_nums: set[int] = set()
+    for ch in import_data.chapters:
+        if ch.number <= 0:
+            raise ValueError("Chapter number must be >= 1")
+        chapter_dir = f"phase7_outputs/chapter_{ch.number}"
+        file_name = "final.md" if ch.kind.value == "final" else "first_draft.md"
+        _maybe_write_artifact(project_id, f"{chapter_dir}/{file_name}", ch.content, overwrite)
+        imported_chapter_nums.add(int(ch.number))
+
+    if not outline_written and import_data.generate_outline_from_chapters and imported_chapter_nums:
+        lines: list[str] = ["# OUTLINE", ""]
+        for ch_num in sorted(imported_chapter_nums):
+            title = None
+            for ch in import_data.chapters:
+                if int(ch.number) == int(ch_num):
+                    title = (ch.title or "").strip() or None
+                    break
+            if title is None:
+                title = f"Chapter {ch_num}"
+            lines.append(f"### Chapter {ch_num}: {title}")
+            lines.append("")
+        _maybe_write_artifact(project_id, "phase6_outputs/outline.md", "\n".join(lines).rstrip() + "\n", overwrite)
+        outline_written = True
+
+    if outline_written:
+        try:
+            novel_vault.novel_parse_outline(project_id)
+        except Exception:
+            pass
+
+    if import_data.context_bundle is not None:
+        _maybe_write_artifact(project_id, "phase1_outputs/context_bundle.md", import_data.context_bundle, overwrite)
+    elif import_data.ensure_context_bundle:
+        if not _artifact_file_exists(project_id, "phase1_outputs/context_bundle.md"):
+            minimal_bundle = _build_minimal_context_bundle(manifest, import_data)
+            _maybe_write_artifact(project_id, "phase1_outputs/context_bundle.md", minimal_bundle, overwrite)
+
+    if imported_chapter_nums:
+        manifest = storage_manager.get_project_manifest(project_id)
+        state = manifest.get("state", {}) if isinstance(manifest.get("state", {}), dict) else {}
+        chapters_data = state.get("chapters", []) if isinstance(state.get("chapters", []), list) else []
+
+        existing_by_num: dict[int, dict] = {}
+        for item in chapters_data:
+            try:
+                num = int(item.get("number"))
+            except Exception:
+                continue
+            if num > 0:
+                existing_by_num[num] = item
+
+        for ch in import_data.chapters:
+            num = int(ch.number)
+            title = (ch.title or "").strip() if ch.title else None
+            if num in existing_by_num:
+                if title:
+                    existing_by_num[num]["title"] = title
+            else:
+                existing_by_num[num] = {"number": num, "title": title or f"Chapter {num}"}
+
+        merged = [existing_by_num[n] for n in sorted(existing_by_num.keys())]
+        total_chapters = state.get("total_chapters")
+        if not isinstance(total_chapters, int) or total_chapters <= 0:
+            total_chapters = len(merged)
+        total_chapters = max(total_chapters, max(imported_chapter_nums))
+
+        novel_vault.novel_update_manifest(
+            project_id,
+            {"state": {"chapters": merged, "total_chapters": total_chapters}},
+        )
+
+    manifest = storage_manager.get_project_manifest(project_id)
+    state = manifest.get("state", {}) if isinstance(manifest.get("state", {}), dict) else {}
+    inferred_completed, inferred_current_phase, _ = _infer_project_phase_state(project_id, state)
+    novel_vault.novel_update_manifest(
+        project_id,
+        {"state": {"phases_completed": inferred_completed, "current_phase": inferred_current_phase}},
+    )
+
+    manifest = storage_manager.get_project_manifest(project_id)
+    manifest["updated_at"] = datetime.utcnow().isoformat()
+    manifest_path = storage_manager.get_project_path(project_id) / "project.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    return manifest
 
 
 def _artifact_exists(project_id: str, path: str) -> bool:
@@ -121,6 +361,69 @@ async def create_project(project: ProjectCreate):
         raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
 
 
+@router.post("/projects/import", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_project_with_import(payload: ProjectImportCreateRequest):
+    try:
+        project_id = str(uuid.uuid4())
+
+        metadata = payload.metadata.model_dump()
+        storage_manager.create_project(project_id, metadata)
+
+        _apply_project_import(project_id, payload.import_data)
+
+        manifest = storage_manager.get_project_manifest(project_id)
+        state = manifest.get("state", {})
+        inferred_completed, inferred_current_phase, _ = _infer_project_phase_state(project_id, state)
+        progress = (len(inferred_completed) / 8) * 100
+
+        return ProjectResponse(
+            id=project_id,
+            title=metadata.get("title", "Untitled"),
+            author=metadata.get("author", "Unknown"),
+            genre=metadata.get("genre", "Unknown"),
+            seriesLength=metadata.get("series_length", 20),
+            createdAt=manifest.get("created_at", ""),
+            updatedAt=manifest.get("updated_at", ""),
+            currentPhase=inferred_current_phase,
+            progress=progress,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to import project: {str(e)}")
+
+
+@router.post("/projects/{project_id}/import", response_model=ProjectResponse)
+async def import_into_project(project_id: str, import_data: ProjectImportRequest):
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        _apply_project_import(project_id, import_data)
+
+        manifest = storage_manager.get_project_manifest(project_id)
+        metadata = manifest.get("metadata", {})
+        state = manifest.get("state", {})
+        inferred_completed, inferred_current_phase, _ = _infer_project_phase_state(project_id, state)
+        progress = (len(inferred_completed) / 8) * 100
+
+        return ProjectResponse(
+            id=project_id,
+            title=metadata.get("title", "Untitled"),
+            author=metadata.get("author", "Unknown"),
+            genre=metadata.get("genre", "Unknown"),
+            seriesLength=metadata.get("series_length", 20),
+            createdAt=manifest.get("created_at", ""),
+            updatedAt=manifest.get("updated_at", ""),
+            currentPhase=inferred_current_phase,
+            progress=progress,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to import into project: {str(e)}")
+
+
 @router.get("/projects", response_model=List[ProjectResponse])
 async def list_projects():
     """List all projects."""
@@ -186,6 +489,186 @@ async def get_project(project_id: str):
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get project: {str(e)}")
+
+
+@router.get("/projects/{project_id}/resume-suggestion", response_model=ResumeSuggestion)
+async def get_resume_suggestion(project_id: str):
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        state = manifest.get("state", {}) if isinstance(manifest.get("state", {}), dict) else {}
+        chapters_data = state.get("chapters", []) if isinstance(state.get("chapters", []), list) else []
+
+        inferred_completed, _, chapters_completed = _infer_project_phase_state(project_id, state)
+
+        total_chapters = state.get("total_chapters")
+        if not isinstance(total_chapters, int) or total_chapters <= 0:
+            total_chapters = len(chapters_data)
+
+        completed_nums: set[int] = set()
+        for ch in chapters_data:
+            try:
+                num = int(ch.get("number"))
+            except Exception:
+                continue
+            if _artifact_exists(project_id, f"phase7_outputs/chapter_{num}/final.md") or _artifact_exists(
+                project_id, f"phase6_outputs/chapter_{num}/final.md"
+            ):
+                completed_nums.add(num)
+
+        next_num = None
+        next_title = None
+        for ch in chapters_data:
+            try:
+                num = int(ch.get("number"))
+            except Exception:
+                continue
+            if num <= 0:
+                continue
+            if num not in completed_nums:
+                next_num = num
+                next_title = ch.get("title")
+                break
+
+        if next_num is None and completed_nums:
+            next_num = max(completed_nums) + 1
+            next_title = None
+
+        if next_num is not None and (not next_title or not str(next_title).strip()):
+            next_title = f"Chapter {next_num}"
+
+        return ResumeSuggestion(
+            nextChapterNumber=next_num,
+            nextChapterTitle=next_title,
+            chaptersCompleted=chapters_completed,
+            totalChapters=total_chapters,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get resume suggestion: {str(e)}")
+
+
+@router.post("/projects/{project_id}/generate-style-sheet")
+async def generate_style_sheet_from_chapters(project_id: str, payload: GenerateStyleSheetRequest):
+    try:
+        manifest = storage_manager.get_project_manifest(project_id)
+        state = manifest.get("state", {}) if isinstance(manifest.get("state", {}), dict) else {}
+        chapters_data = state.get("chapters", []) if isinstance(state.get("chapters", []), list) else []
+
+        overwrite = bool(payload.overwrite)
+        if _artifact_file_exists(project_id, "phase1_outputs/style_sheet.md") and not overwrite:
+            raise HTTPException(status_code=400, detail="style_sheet.md already exists (set overwrite=true to replace)")
+
+        chapter_nums: list[int] = []
+        if payload.chapter_numbers:
+            chapter_nums = [int(n) for n in payload.chapter_numbers if int(n) > 0]
+        else:
+            for ch in chapters_data:
+                try:
+                    n = int(ch.get("number"))
+                except Exception:
+                    continue
+                if n > 0:
+                    chapter_nums.append(n)
+
+        chapter_nums = sorted(set(chapter_nums))
+        if not chapter_nums:
+            raise HTTPException(status_code=400, detail="No chapters found to generate a style sheet from")
+
+        max_chars = int(payload.max_chars or 60000)
+        max_chars = max(5000, min(max_chars, 200000))
+
+        samples_parts: list[str] = []
+        total = 0
+        for n in chapter_nums:
+            text = _read_first_existing_artifact(
+                project_id,
+                [
+                    f"phase7_outputs/chapter_{n}/final.md",
+                    f"phase7_outputs/chapter_{n}/first_draft.md",
+                    f"phase6_outputs/chapter_{n}/final.md",
+                    f"phase6_outputs/chapter_{n}/first_draft.md",
+                ],
+            )
+            if not text or not str(text).strip():
+                continue
+
+            block = f"## Chapter {n}\n\n{str(text).strip()}\n"
+            remaining = max_chars - total
+            if remaining <= 0:
+                break
+            if len(block) > remaining:
+                block = block[:remaining]
+            samples_parts.append(block)
+            total += len(block)
+
+        writing_samples = "\n\n".join(samples_parts).strip()
+        if not writing_samples:
+            raise HTTPException(status_code=400, detail="No readable chapter text found for the selected chapters")
+
+        from ..config import settings
+        from ..llm import get_provider_manager
+
+        manager = get_provider_manager()
+        style_sheet = await manager.generate(
+            provider=settings.default_llm_provider,
+            model=settings.default_llm_model,
+            role="You are an expert prose analyst.",
+            task=(
+                f"<writing_samples>\n{writing_samples}\n</writing_samples>\n\n"
+                "Draft a prose style sheet that an LLM can follow to write consistently.\n\n"
+                "Requirements:\n"
+                "- Emphasize deep POV and show-don't-tell (with examples).\n"
+                "- Specify POV + tense conventions.\n"
+                "- Dialogue style guidance.\n"
+                "- Typical sentence/paragraph rhythm.\n"
+                "- Approximate grade level.\n\n"
+                "Output only the style sheet in Markdown."
+            ),
+            temperature=0.2,
+            max_tokens=4000,
+        )
+
+        _maybe_write_artifact(project_id, "phase1_outputs/style_sheet.md", style_sheet, overwrite)
+
+        try:
+            existing_bundle = _read_first_existing_artifact(project_id, ["phase1_outputs/context_bundle.md"])
+            if existing_bundle is not None:
+                updated_bundle = _upsert_context_bundle_section(existing_bundle, "STYLE_SHEET", style_sheet)
+                _maybe_write_artifact(project_id, "phase1_outputs/context_bundle.md", updated_bundle, True)
+        except Exception:
+            pass
+
+        try:
+            refreshed = storage_manager.get_project_manifest(project_id)
+            refreshed_state = (
+                refreshed.get("state", {})
+                if isinstance(refreshed.get("state", {}), dict)
+                else {}
+            )
+            inferred_completed, inferred_current_phase, _ = _infer_project_phase_state(
+                project_id, refreshed_state
+            )
+            novel_vault.novel_update_manifest(
+                project_id,
+                {
+                    "updated_at": datetime.utcnow().isoformat(),
+                    "state": {
+                        "phases_completed": inferred_completed,
+                        "current_phase": inferred_current_phase,
+                    },
+                },
+            )
+        except Exception:
+            pass
+
+        return {"success": True, "styleSheet": style_sheet}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate style sheet: {str(e)}")
 
 
 @router.get("/projects/{project_id}/settings/llm", response_model=ProjectLLMSettings)
@@ -489,6 +972,7 @@ async def execute_phase(project_id: str, phase: int, request: PhaseExecuteReques
                 project_id=project_id,
                 outline_template=request.inputs.get("outline_template", "USE_BUNDLE"),
                 auto_approve=request.inputs.get("auto_approve", False),
+                enable_npe_romance_architect=request.inputs.get("enable_npe_romance_architect", True),
             )
 
             workflow_id = f"phase6-{project_id}-{uuid.uuid4()}"

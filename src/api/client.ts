@@ -2,6 +2,11 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 import {
     ProjectCreate,
     ProjectResponse,
+    ProjectImportCreateRequest,
+    ProjectImportRequest,
+    ResumeSuggestion,
+    GenerateStyleSheetRequest,
+    GenerateStyleSheetResponse,
     PhaseExecuteRequest,
     WorkflowStatus,
     ArtifactInfo,
@@ -100,6 +105,32 @@ class NovelWeaverClient {
 
     async createProject(data: ProjectCreate): Promise<ProjectResponse> {
         const response = await this.client.post<ProjectResponse>('/projects', data);
+        return response.data;
+    }
+
+    async createProjectFromImport(data: ProjectImportCreateRequest): Promise<ProjectResponse> {
+        const response = await this.client.post<ProjectResponse>('/projects/import', data);
+        return response.data;
+    }
+
+    async importIntoProject(projectId: string, data: ProjectImportRequest): Promise<ProjectResponse> {
+        const response = await this.client.post<ProjectResponse>(`/projects/${projectId}/import`, data);
+        return response.data;
+    }
+
+    async getResumeSuggestion(projectId: string): Promise<ResumeSuggestion> {
+        const response = await this.client.get<ResumeSuggestion>(`/projects/${projectId}/resume-suggestion`);
+        return response.data;
+    }
+
+    async generateStyleSheetFromChapters(
+        projectId: string,
+        payload: GenerateStyleSheetRequest
+    ): Promise<GenerateStyleSheetResponse> {
+        const response = await this.client.post<GenerateStyleSheetResponse>(
+            `/projects/${projectId}/generate-style-sheet`,
+            payload
+        );
         return response.data;
     }
 
